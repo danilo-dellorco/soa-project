@@ -1,0 +1,1 @@
+cmd_/home/danilo/code/soa-project/driver-concurrency/Module.symvers := sed 's/\.ko$$/\.o/' /home/danilo/code/soa-project/driver-concurrency/modules.order | scripts/mod/modpost -m -a  -o /home/danilo/code/soa-project/driver-concurrency/Module.symvers -e -i Module.symvers   -T -
