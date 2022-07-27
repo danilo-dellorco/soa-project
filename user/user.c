@@ -138,6 +138,7 @@ int read_op() {
         printf(COLOR_RED "\nRead: the amount of data inserted is not valid \n" COLOR_RESET);
     else {
         res = read(device_fd, r_data, min(amount, 4096));
+        // TODO no data read sempre
         if (res == 0 || res == -1)
             printf(COLOR_RED "\nRead result: no data was read from the device file \n" COLOR_RESET);
         else {
