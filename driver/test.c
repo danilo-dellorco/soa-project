@@ -142,11 +142,12 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off) 
     printk("%s: somebody called a read on dev with [major,minor] number [%d,%d]\n", MODNAME, get_major(filp), get_minor(filp));
 
     // need to lock in any case
-    mutex_lock(&(the_object->operation_synchronizer));
-    if (*off > the_object->valid_bytes) {
-        mutex_unlock(&(the_object->operation_synchronizer));
-        return 0;
-    }
+    // mutex_lock(&(the_object->operation_synchronizer));
+    // if (*off > the_object->valid_bytes) {
+    //     mutex_unlock(&(the_object->operation_synchronizer));
+    //     return 0;
+    // }
+
     if ((the_object->valid_bytes - *off) < len) len = the_object->valid_bytes - *off;
     ret = copy_to_user(buff, &(the_object->stream_content[*off]), len);
 
