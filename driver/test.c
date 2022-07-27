@@ -45,7 +45,6 @@ static int Major; /* Major number assigned to broadcast device driver */
  *
  */
 typedef struct _object_state {
-    struct mutex object_busy;
     struct mutex operation_synchronizer;
     int valid_bytes;
     char *stream_content;  // Il nodo di I/O è un buffer di memoria, che viene puntato tramite questo campo
@@ -78,10 +77,6 @@ static int dev_open(struct inode *inode, struct file *file) {
         return -ENODEV;
     }
 
-    if (!mutex_trylock(&(objects[minor].object_busy))) {
-        return -EBUSY;
-    }
-
     printk("%s: device file successfully opened for object with minor %d\n", MODNAME, minor);
     // device opened by a default nop
     return 0;
@@ -93,7 +88,6 @@ static int dev_open(struct inode *inode, struct file *file) {
 static int dev_release(struct inode *inode, struct file *file) {
     int minor;
     minor = get_minor(file);
-    mutex_unlock(&(objects[minor].object_busy));
     printk("%s: device file closed\n", MODNAME);
     return 0;
 }
@@ -142,11 +136,11 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off) 
     printk("%s: somebody called a read on dev with [major,minor] number [%d,%d]\n", MODNAME, get_major(filp), get_minor(filp));
 
     // need to lock in any case
-    // mutex_lock(&(the_object->operation_synchronizer));
-    // if (*off > the_object->valid_bytes) {
-    //     mutex_unlock(&(the_object->operation_synchronizer));
-    //     return 0;
-    // }
+    mutex_lock(&(the_object->operation_synchronizer));
+    if (*off > the_object->valid_bytes) {
+        mutex_unlock(&(the_object->operation_synchronizer));
+        return 0;
+    }
 
     if ((the_object->valid_bytes - *off) < len) len = the_object->valid_bytes - *off;
     ret = copy_to_user(buff, &(the_object->stream_content[*off]), len);
@@ -156,8 +150,6 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off) 
 
     return len - ret;
     printk("%s: somebody called a read on dev with [major,minor] number [%d,%d]\n", MODNAME, get_major(filp), get_minor(filp));
-
-    return 0;
 }
 
 /**
@@ -177,13 +169,14 @@ static long dev_ioctl(struct file *filp, unsigned int command, unsigned long par
 /*
  * Assegnazione della struttura driver, specificando i puntatori alle varie file operations implementate
  */
+
 static struct file_operations fops = {
+    .owner = THIS_MODULE,  // do not forget this
     .write = dev_write,
     .read = dev_read,
     .open = dev_open,
-    .release = dev_release
-
-};
+    .release = dev_release,
+    .unlocked_ioctl = dev_ioctl};
 
 /*
  *  Inizializza il modulo, scrivendo sul buffer del kernel il Major Number assegnato al Driver.
@@ -193,7 +186,6 @@ int init_module(void) {
 
     // Inizializzo lo stato di ogni device.
     for (i = 0; i < MINORS; i++) {
-        mutex_init(&(objects[i].object_busy));
         mutex_init(&(objects[i].operation_synchronizer));
         objects[i].valid_bytes = 0;
         objects[i].stream_content = NULL;

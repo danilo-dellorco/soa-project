@@ -39,12 +39,12 @@ __used __section("__versions") = {
 	{ 0x4dfa8d4b, "mutex_lock" },
 	{ 0xbb9ed3bf, "mutex_trylock" },
 	{ 0x87a21cb3, "__ubsan_handle_out_of_bounds" },
-	{ 0x92997ed8, "_printk" },
 	{ 0x3213f038, "mutex_unlock" },
+	{ 0x92997ed8, "_printk" },
 	{ 0xbdfb6dbb, "__fentry__" },
 };
 
 MODULE_INFO(depends, "");
 
 
-MODULE_INFO(srcversion, "3D59BBF437E4B5D12756DA5");
+MODULE_INFO(srcversion, "B3D7145A6F4A8D9F6ED0B16");

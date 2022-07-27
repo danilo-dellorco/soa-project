@@ -79,7 +79,7 @@ int main(int argc, char** argv) {
                 write_op();
                 break;
             case (2):
-                write_op();
+                read_op();
                 break;
             case (9):
                 create_nodes();
@@ -124,6 +124,27 @@ int write_op() {
     else {
         printf(COLOR_GREEN "\nWrite result (%d bytes): operation completed successfully\n", res);
         printf(COLOR_RESET);
+    }
+}
+
+int read_op() {
+    printf("Insert the amount of data you want to read (max 4096): ");
+    int amount;
+    char r_data[4096];
+    int res;
+    scanf("%d", &amount);
+
+    if (errno == ERANGE || errno == EINVAL)
+        printf(COLOR_RED "\nRead: the amount of data inserted is not valid \n" COLOR_RESET);
+    else {
+        res = read(device_fd, r_data, min(amount, 4096));
+        if (res == 0 || res == -1)
+            printf(COLOR_RED "\nRead result: no data was read from the device file \n" COLOR_RESET);
+        else {
+            printf(COLOR_GREEN "\nRead result (%d bytes): ", res);
+            printf(COLOR_RESET);
+            printf("%s\n\n", r_data);
+        }
     }
 }
 
