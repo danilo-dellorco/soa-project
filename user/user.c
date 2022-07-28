@@ -59,9 +59,17 @@ int min(int num1, int num2) {
     return num2;
 }
 
-int main(int argc, char** argv) {
-    printf("\t\t\t\t\t%s%s| MultiFlow Device driver |%s%s\n\n", COLOR_YELLOW, BOLD, COLOR_RESET, RESET);
+int wait_input() {
+    printf("\n-----------------------------------\n");
+    printf("Press ENTER to continue\n");
+    fflush(stdout);
+    char enter = 0;
+    while (enter != '\r' && enter != '\n') {
+        enter = getchar();
+    }
+}
 
+int main(int argc, char** argv) {
     if (argc < 2) {
         printf("usage: sudo ./user DEVICE_PATH\n");
         return -1;
@@ -74,18 +82,23 @@ int main(int argc, char** argv) {
         switch (cmd) {
             case (0):
                 open_device();
+                wait_input();
                 break;
             case (1):
                 write_op();
+                wait_input();
                 break;
             case (2):
                 read_op();
+                wait_input();
                 break;
             case (9):
                 create_nodes();
+                wait_input();
                 break;
             case (10):
                 delete_nodes();
+                wait_input();
                 break;
             case (-1):
                 exit_op();
@@ -107,7 +120,7 @@ int open_device() {
     device_fd = open(dev, O_RDWR);
     if (device_fd == -1) {
         printf("open error on device %s\n", dev);
-        exit(-1);
+        return (-1);
     }
     printf("device %s successfully opened, fd is: %d\n", dev, device_fd);
 }
@@ -150,12 +163,14 @@ int read_op() {
 }
 
 int show_menu() {
+    system("clear");
+    printf("\t\t\t\t\t%s%s| MultiFlow Device driver |%s%s\n\n", COLOR_YELLOW, BOLD, COLOR_RESET, RESET);
     for (i = 0; i < menu_size; ++i) {
         printf(COLOR_MAGENTA);
         printf("%s\n", menu_list[i]);
         printf(COLOR_RESET);
     }
-    printf("\n\n Insert your command: ");
+    printf("\n\nInsert your command: ");
     scanf("%d", &cmd);
 }
 
@@ -165,7 +180,7 @@ int create_nodes() {
 
     printf("\nInsert Major Number of the device driver: ");
     scanf("%d", &major);
-    printf("\nInsert Number of nodes to create: ");
+    printf("Insert Number of nodes to create: ");
     scanf("%d", &minors);
 
     printf("Creating %d minors for device %s with major %d\n", minors, device_path, major);
@@ -180,17 +195,10 @@ int create_nodes() {
 
 int delete_nodes() {
     int minors;
-
-    printf("\nInsert Number of nodes to delete: ");
-    scanf("%d", &minors);
-
-    printf("Deleting %d minors for device %s\n", minors, device_path);
-
-    for (i = 0; i < minors; i++) {
-        sprintf(buff, "rm %s%d\n", device_path, i);
-        printf("%s", buff);
-        system(buff);
-    }
+    printf("Deleting all minors for device %s\n", device_path);
+    sprintf(buff, "rm %s*\n", device_path);
+    printf(" > %s", buff);
+    system(buff);
 }
 
 int exit_op() {

@@ -14,9 +14,9 @@
 #include <linux/version.h> /* For LINUX_VERSION_CODE */
 
 MODULE_LICENSE("GPL");
-MODULE_AUTHOR("Francesco Quaglia");
+MODULE_AUTHOR("Danilo Dell'Orco");
 
-#define MODNAME "CHAR DEV"
+#define MODNAME "MULTI-FLOW DEV"
 
 /*
  * Prototipi delle funzioni del driver
@@ -47,6 +47,8 @@ static int Major; /* Major number assigned to broadcast device driver */
 typedef struct _object_state {
     struct mutex operation_synchronizer;
     int valid_bytes;
+    int write_offset;
+    int read_offset;
     char *stream_content;  // Il nodo di I/O è un buffer di memoria, che viene puntato tramite questo campo
 } object_state;
 
@@ -93,7 +95,7 @@ static int dev_release(struct inode *inode, struct file *file) {
 }
 
 /**
- * Funzione eseguita effettivamente quando andiamo a chiamare una write() a livello applicativo, una sys_write()
+ * Funzione eseguita effettivamente quando andiamo a chiamare una write() a livello applicativo
  * @param filp puntatore alla struttura dati che rappresenta la sessione
  * @param buff puntatore all'area di memoria applicativa passato dalla syscall
  * @param len taglia della write
@@ -124,32 +126,51 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
     the_object->valid_bytes = *off;
     mutex_unlock(&(the_object->operation_synchronizer));
 
+    ret = clear_user(buff, len);
+    printk("%s: write clear_user %d\n", MODNAME, ret);
+
     return len - ret;
 }
 
+/**
+ * Funzione eseguita effettivamente quando andiamo a chiamare una read() a livello applicativo
+ * @param filp puntatore alla struttura dati che rappresenta la sessione
+ * @param buff puntatore all'area di memoria applicativa passato dalla syscall
+ * @param len taglia della write
+ * @param off offset all'area di memoria filp su cui lavoriamo.
+ */
 static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off) {
     int minor = get_minor(filp);
     int ret;
     object_state *the_object;
 
+    ret = clear_user(buff, len);
+    printk("%s: read clear_user %d\n", MODNAME, ret);
+
     the_object = objects + minor;
     printk("%s: somebody called a read on dev with [major,minor] number [%d,%d]\n", MODNAME, get_major(filp), get_minor(filp));
+    printk("%s: offset: %d\n", MODNAME, the_object->read_offset);
 
     // need to lock in any case
     mutex_lock(&(the_object->operation_synchronizer));
-    if (*off > the_object->valid_bytes) {
+    if (the_object->read_offset > the_object->valid_bytes) {
+        printk("%s: read lock error (1)", MODNAME);
         mutex_unlock(&(the_object->operation_synchronizer));
         return 0;
     }
 
-    if ((the_object->valid_bytes - *off) < len) len = the_object->valid_bytes - *off;
-    ret = copy_to_user(buff, &(the_object->stream_content[*off]), len);
+    printk("%s: valid_bytes: %d, len: %lu\n", MODNAME, the_object->valid_bytes, len);
+    if ((the_object->valid_bytes - the_object->read_offset) < len) {
+        printk("%s: len error (1)", MODNAME);
+        len = the_object->valid_bytes - the_object->read_offset;
+    }
+    ret = copy_to_user(buff, &(the_object->stream_content[the_object->read_offset]), len);
+    printk("%s: copy_to_user ret: %d", MODNAME, ret);
 
-    *off += (len - ret);
+    the_object->read_offset += (len - ret);
     mutex_unlock(&(the_object->operation_synchronizer));
 
     return len - ret;
-    printk("%s: somebody called a read on dev with [major,minor] number [%d,%d]\n", MODNAME, get_major(filp), get_minor(filp));
 }
 
 /**
@@ -188,6 +209,8 @@ int init_module(void) {
     for (i = 0; i < MINORS; i++) {
         mutex_init(&(objects[i].operation_synchronizer));
         objects[i].valid_bytes = 0;
+        objects[i].read_offset = 0;
+        objects[i].write_offset = 0;
         objects[i].stream_content = NULL;
         // Allocazione di una pagina (4KB) tramite Buddy Allocator
         objects[i].stream_content = (char *)__get_free_pages(GFP_KERNEL, 1);
