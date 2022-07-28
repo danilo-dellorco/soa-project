@@ -10,10 +10,12 @@
 #include <unistd.h>
 
 int i;
-char buff[4096];
+char data_buff[4096];
 int cmd;
-int device_fd;
+int device_fd = -1;
 int minor;
+char* device_path;
+char opened_device[64] = "none";
 #define DATA "driver test\n"
 #define SIZE strlen(DATA)
 
@@ -44,7 +46,6 @@ char* menu_list[] = {
 };
 int menu_size = sizeof(menu_list) / sizeof(char*);
 
-char* device_path;
 int show_menu();
 int create_nodes();
 int delete_nodes();
@@ -59,14 +60,23 @@ int min(int num1, int num2) {
     return num2;
 }
 
-int wait_input() {
-    printf("\n-----------------------------------\n");
-    printf("Press ENTER to continue\n");
+void myflush(FILE* in) {
+    int ch;
+    do
+        ch = fgetc(in);
+    while (ch != EOF && ch != '\n');
+    clearerr(in);
+}
+
+void wait_input(void) {
+    myflush(stdin);
+    printf("Press [Enter] to continue...");
     fflush(stdout);
-    char enter = 0;
-    while (enter != '\r' && enter != '\n') {
-        enter = getchar();
-    }
+    getchar();
+}
+
+void clear_buffer() {
+    memset(data_buff, 0, strlen(data_buff));
 }
 
 int main(int argc, char** argv) {
@@ -103,6 +113,10 @@ int main(int argc, char** argv) {
             case (-1):
                 exit_op();
                 break;
+            default:
+                printf(COLOR_RED "Insert a valid command from the list\n" COLOR_RESET);
+                wait_input();
+                break;
         }
 
         // pause();
@@ -113,25 +127,32 @@ int main(int argc, char** argv) {
 int open_device() {
     printf("\nInsert Minor Number of the device driver to open: ");
     scanf("%d", &minor);
+    printf("1\n");
 
-    char dev[512];
-    sprintf(dev, "%s%d", device_path, minor);
-    printf("opening device %s\n", dev);
-    device_fd = open(dev, O_RDWR);
+    sprintf(opened_device, "%s%d", device_path, minor);
+    printf("2\n");
+    printf("opening device %s\n", opened_device);
+    device_fd = open(opened_device, O_RDWR);
     if (device_fd == -1) {
-        printf("open error on device %s\n", dev);
+        printf("open error on device %s\n", opened_device);
+        sprintf(opened_device, "none");
         return (-1);
     }
-    printf("device %s successfully opened, fd is: %d\n", dev, device_fd);
+    printf("device %s successfully opened, fd is: %d\n", opened_device, device_fd);
 }
 
 int write_op() {
-    char w_data[4096];
-    int res;
-    printf("Insert the data you want to write (max 4096): ");
-    scanf("%s", w_data);
+    if (device_fd < 0) {
+        printf(COLOR_RED "Open a device first.\n" COLOR_RESET);
+        return -1;
+    }
 
-    res = write(device_fd, w_data, min(strlen(w_data), 4096));
+    int res;
+    clear_buffer();
+    printf("Insert the data you want to write (max 4096): ");
+    scanf("%s", data_buff);
+
+    res = write(device_fd, data_buff, min(strlen(data_buff), 4096));
     if (res == 0 || res == -1)
         printf(COLOR_RED "\nWrite result: could not write in the buffer \n" COLOR_RESET);
     else {
@@ -141,23 +162,28 @@ int write_op() {
 }
 
 int read_op() {
+    if (device_fd < 0) {
+        printf(COLOR_RED "Open a device first.\n" COLOR_RESET);
+        return -1;
+    }
+
     printf("Insert the amount of data you want to read (max 4096): ");
     int amount;
-    char r_data[4096];
     int res;
     scanf("%d", &amount);
+
+    clear_buffer();
 
     if (errno == ERANGE || errno == EINVAL)
         printf(COLOR_RED "\nRead: the amount of data inserted is not valid \n" COLOR_RESET);
     else {
-        res = read(device_fd, r_data, min(amount, 4096));
-        // TODO no data read sempre
+        res = read(device_fd, data_buff, min(amount, 4096));
         if (res == 0 || res == -1)
             printf(COLOR_RED "\nRead result: no data was read from the device file \n" COLOR_RESET);
         else {
             printf(COLOR_GREEN "\nRead result (%d bytes): ", res);
             printf(COLOR_RESET);
-            printf("%s\n\n", r_data);
+            printf("%s\n\n", data_buff);
         }
     }
 }
@@ -165,6 +191,10 @@ int read_op() {
 int show_menu() {
     system("clear");
     printf("\t\t\t\t\t%s%s| MultiFlow Device driver |%s%s\n\n", COLOR_YELLOW, BOLD, COLOR_RESET, RESET);
+    printf(COLOR_YELLOW "------------------------------------------------\n" COLOR_RESET);
+    printf("%sCurrently Opened: %s%s\n", BOLD, RESET, opened_device);
+    printf(COLOR_YELLOW "------------------------------------------------\n" COLOR_RESET);
+
     for (i = 0; i < menu_size; ++i) {
         printf(COLOR_MAGENTA);
         printf("%s\n", menu_list[i]);
@@ -177,6 +207,7 @@ int show_menu() {
 int create_nodes() {
     int minors;
     int major;
+    clear_buffer();
 
     printf("\nInsert Major Number of the device driver: ");
     scanf("%d", &major);
@@ -186,19 +217,20 @@ int create_nodes() {
     printf("Creating %d minors for device %s with major %d\n", minors, device_path, major);
 
     for (i = 0; i < minors; i++) {
-        sprintf(buff, "mknod %s%d c %d %i\n", device_path, i, major, i);
-        system(buff);
-        sprintf(buff, "%s%d", device_path, i);
+        sprintf(data_buff, "mknod %s%d c %d %i\n", device_path, i, major, i);
+        system(data_buff);
+        sprintf(data_buff, "%s%d", device_path, i);
         // pthread_create(&tid, NULL, the_thread, strdup(buff));
     }
 }
 
 int delete_nodes() {
     int minors;
+    clear_buffer();
     printf("Deleting all minors for device %s\n", device_path);
-    sprintf(buff, "rm %s*\n", device_path);
-    printf(" > %s", buff);
-    system(buff);
+    sprintf(data_buff, "rm %s*\n", device_path);
+    printf(" > %s", data_buff);
+    system(data_buff);
 }
 
 int exit_op() {

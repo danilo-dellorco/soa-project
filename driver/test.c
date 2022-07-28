@@ -115,7 +115,7 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
         mutex_unlock(&(the_object->operation_synchronizer));
         return -ENOSPC;  // no space left on device
     }
-    if (*off > the_object->valid_bytes) {  // offset bwyond the current stream size
+    if (*off > the_object->valid_bytes) {  // offset beyond the current stream size
         mutex_unlock(&(the_object->operation_synchronizer));
         return -ENOSR;  // out of stream resources
     }
