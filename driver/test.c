@@ -1,17 +1,6 @@
-
-/*
- *  baseline char device driver with limitation on minor numbers - no actual operations
- */
-
 #define EXPORT_SYMTAB
-#include <linux/fs.h>
-#include <linux/init.h>
-#include <linux/kernel.h>
-#include <linux/module.h>
-#include <linux/pid.h> /* For pid types */
-#include <linux/sched.h>
-#include <linux/tty.h>     /* For the tty declarations */
-#include <linux/version.h> /* For LINUX_VERSION_CODE */
+
+#include "utils/structures.h"
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Danilo Dell'Orco");
@@ -40,17 +29,6 @@ static int Major; /* Major number assigned to broadcast device driver */
 #define get_major(session) MAJOR(session->f_dentry->d_inode->i_rdev)
 #define get_minor(session) MINOR(session->f_dentry->d_inode->i_rdev)
 #endif
-
-/**
- *
- */
-typedef struct _object_state {
-    struct mutex operation_synchronizer;
-    int valid_bytes;
-    int write_offset;
-    int read_offset;
-    char *stream_content;  // Il nodo di I/O è un buffer di memoria, che viene puntato tramite questo campo
-} object_state;
 
 /**
  * Dobbiamo gestire 128 dispositivi di I/O, quindi 128 minor numbers differenti.
