@@ -20,6 +20,7 @@ deps_/home/danilo/code/soa-project/driver/test.o := \
     $(wildcard include/config/ARCH_USE_BUILTIN_BSWAP) \
     $(wildcard include/config/SHADOW_CALL_STACK) \
     $(wildcard include/config/KCOV) \
+  /home/danilo/code/soa-project/driver/utils/structures.h \
   include/linux/fs.h \
     $(wildcard include/config/READ_ONLY_THP_FOR_FS) \
     $(wildcard include/config/SMP) \

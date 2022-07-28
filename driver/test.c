@@ -6,6 +6,7 @@ MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Danilo Dell'Orco");
 
 #define MODNAME "MULTI-FLOW DEV"
+#define DEVICE_NAME "test-dev" /* Device file name in /dev/ - not mandatory  */
 
 /*
  * Prototipi delle funzioni del driver
@@ -14,8 +15,7 @@ static int dev_open(struct inode *, struct file *);
 static int dev_release(struct inode *, struct file *);
 static ssize_t dev_write(struct file *, const char *, size_t, loff_t *);
 
-#define DEVICE_NAME "my-new-dev" /* Device file name in /dev/ - not mandatory  */
-#define OBJECT_MAX_SIZE (4096)   // just one page
+#define OBJECT_MAX_SIZE (4096)  // just one page
 
 static int Major; /* Major number assigned to broadcast device driver */
 
@@ -84,24 +84,25 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
     int ret;
     object_state *the_object;
 
+    stream_block *block = kzalloc(sizeof(stream_block), GFP_ATOMIC);
+    char *block_buff = kzalloc(len, GFP_ATOMIC);
+
     the_object = objects + minor;
     printk("%s: somebody called a write on dev with [major,minor] number [%d,%d]\n", MODNAME, get_major(filp), get_minor(filp));
 
     // need to lock in any case
     mutex_lock(&(the_object->operation_synchronizer));
-    if (*off >= OBJECT_MAX_SIZE) {  // offset too large
-        mutex_unlock(&(the_object->operation_synchronizer));
-        return -ENOSPC;  // no space left on device
-    }
-    if (*off > the_object->valid_bytes) {  // offset beyond the current stream size
-        mutex_unlock(&(the_object->operation_synchronizer));
-        return -ENOSR;  // out of stream resources
-    }
-    if ((OBJECT_MAX_SIZE - *off) < len) len = OBJECT_MAX_SIZE - *off;
-    ret = copy_from_user(&(the_object->stream_content[*off]), buff, len);
+
+    ret = copy_from_user(block_buff, buff, len);
 
     *off += (len - ret);
     the_object->valid_bytes = *off;
+    block->next = NULL;
+    block->stream_content = NULL;
+
+    the_object->tail->next = block;
+    the_object->tail->stream_content = block_buff;
+
     mutex_unlock(&(the_object->operation_synchronizer));
 
     ret = clear_user(buff, len);
@@ -120,33 +121,56 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
 static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off) {
     int minor = get_minor(filp);
     int ret;
+    int block_size;
     object_state *the_object;
+    stream_block *current_block;
+    stream_block *completed_block;
 
     ret = clear_user(buff, len);
     printk("%s: read clear_user %d\n", MODNAME, ret);
 
     the_object = objects + minor;
     printk("%s: somebody called a read on dev with [major,minor] number [%d,%d]\n", MODNAME, get_major(filp), get_minor(filp));
-    printk("%s: offset: %d\n", MODNAME, the_object->read_offset);
+    printk("%s: offset: %d\n", MODNAME, the_object->head->read_offset);
 
     // need to lock in any case
     mutex_lock(&(the_object->operation_synchronizer));
-    if (the_object->read_offset > the_object->valid_bytes) {
-        printk("%s: read lock error (1)", MODNAME);
-        mutex_unlock(&(the_object->operation_synchronizer));
-        return 0;
-    }
+    // if (the_object->read_offset > the_object->valid_bytes) {
+    //     printk("%s: read lock error (1)", MODNAME);
+    //     mutex_unlock(&(the_object->operation_synchronizer));
+    //     return 0;
+    // }
 
-    printk("%s: valid_bytes: %d, len: %lu\n", MODNAME, the_object->valid_bytes, len);
-    if ((the_object->valid_bytes - the_object->read_offset) < len) {
-        printk("%s: len error (1)", MODNAME);
-        len = the_object->valid_bytes - the_object->read_offset;
-    }
-    ret = copy_to_user(buff, &(the_object->stream_content[the_object->read_offset]), len);
-    printk("%s: copy_to_user ret: %d", MODNAME, ret);
+    block_size = strlen(current_block->stream_content);
+    current_block = the_object->head;
+    int to_read = len;
+    // printk("%s: valid_bytes: %d, len: %lu\n", MODNAME, the_object->valid_bytes, len);
 
-    the_object->read_offset += (len - ret);
-    mutex_unlock(&(the_object->operation_synchronizer));
+    while (to_read != 0) {
+        if (block_size - current_block->read_offset < to_read) {
+            // TODO devo proseguire la lettura nel blocco successivo
+            printk("%s: cross block read", MODNAME);
+            len = block_size - current_block->read_offset;
+            to_read -= len;
+            ret += copy_to_user(&buff[ret], &(current_block->stream_content[current_block->read_offset]), len);
+            ret += len;
+
+            // Tutti i dati sono stati letti dal blocco, quindi posso rimuoverlo e deallocare la memoria
+            completed_block = current_block;
+            current_block = current_block->next;
+            the_object->head = current_block;
+            block_size = strlen(current_block->stream_content);
+
+            kfree(completed_block->stream_content);
+            kfree(completed_block);
+
+        } else {
+            ret = copy_to_user(buff, &(current_block->stream_content[current_block->read_offset]), len);
+            printk("%s: copy_to_user ret: %d", MODNAME, ret);
+            current_block->read_offset += (len - ret);
+            mutex_unlock(&(the_object->operation_synchronizer));
+        }
+    }
 
     return len - ret;
 }
@@ -186,19 +210,20 @@ int init_module(void) {
     // Inizializzo lo stato di ogni device.
     for (i = 0; i < MINORS; i++) {
         mutex_init(&(objects[i].operation_synchronizer));
+        objects[i].head->next = NULL;
+        objects[i].head->stream_content = NULL;
+        objects[i].head->read_offset = 0;
         objects[i].valid_bytes = 0;
-        objects[i].read_offset = 0;
-        objects[i].write_offset = 0;
-        objects[i].stream_content = NULL;
-        // Allocazione di una pagina (4KB) tramite Buddy Allocator
-        objects[i].stream_content = (char *)__get_free_pages(GFP_KERNEL, 1);
-        printk(KERN_INFO "initialized buffer for minor %d: %s", i, objects[i].stream_content);
 
-        if (objects[i].stream_content == NULL) goto revert_allocation;
+        // Allocazione per il primo blocco di stream
+        objects[i].head = kzalloc(sizeof(stream_block), GFP_KERNEL);
+        objects[i].tail = objects[i].head;
+
+        if (objects[i].head == NULL) goto revert_allocation;
     }
 
     // Registro il device, con major 0 per allocazione dinamica. count=128 perchè voglio gestire massimo 128 devices
-    Major = __register_chrdev(0, 0, 256, DEVICE_NAME, &fops);
+    Major = __register_chrdev(0, 0, 128, DEVICE_NAME, &fops);
 
     if (Major < 0) {
         printk("%s: registering device failed\n", MODNAME);
@@ -212,7 +237,7 @@ int init_module(void) {
 revert_allocation:
     printk(KERN_INFO "revert allocation\n");
     for (; i >= 0; i--) {
-        free_page((unsigned long)objects[i].stream_content);
+        kfree(objects[i].head);
     }
     return -ENOMEM;
 }
