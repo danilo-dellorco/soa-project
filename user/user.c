@@ -127,10 +127,13 @@ int main(int argc, char** argv) {
 int open_device() {
     printf("\nInsert Minor Number of the device driver to open: ");
     scanf("%d", &minor);
-    printf("1\n");
+
+    if (device_fd != -1) {
+        printf("device %s is already opened. Closing.\n", opened_device);
+        close(device_fd);
+    }
 
     sprintf(opened_device, "%s%d", device_path, minor);
-    printf("2\n");
     printf("opening device %s\n", opened_device);
     device_fd = open(opened_device, O_RDWR);
     if (device_fd == -1) {

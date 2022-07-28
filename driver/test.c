@@ -80,30 +80,42 @@ static int dev_release(struct inode *inode, struct file *file) {
  * @param off offset all'area di memoria filp su cui lavoriamo.
  */
 static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t *off) {
-    int minor = get_minor(filp);
-    int ret;
     object_state *the_object;
-
-    stream_block *block = kzalloc(sizeof(stream_block), GFP_ATOMIC);
+    int minor = get_minor(filp);
+    stream_block *current_block;
     char *block_buff = kzalloc(len, GFP_ATOMIC);
+    int ret;
+
+    // Blocco vuoto per la scrittura successiva. E' il blocco successivo a quello attualmente scritto
+    stream_block *empty_block = kzalloc(sizeof(stream_block), GFP_ATOMIC);
+    empty_block->next = NULL;
+    empty_block->stream_content = NULL;
 
     the_object = objects + minor;
-    printk("%s: somebody called a write on dev with [major,minor] number [%d,%d]\n", MODNAME, get_major(filp), get_minor(filp));
+    printk("%s: somebody called a write of %ld bytes on dev [%d,%d]\n", MODNAME, len, get_major(filp), get_minor(filp));
 
     // need to lock in any case
     mutex_lock(&(the_object->operation_synchronizer));
 
     ret = copy_from_user(block_buff, buff, len);
+    printk("%s: copy_from_user: %d, \n", MODNAME, ret, strlen(block_buff));
 
     *off += (len - ret);
     the_object->valid_bytes = *off;
-    block->next = NULL;
-    block->stream_content = NULL;
 
-    the_object->tail->next = block;
-    the_object->tail->stream_content = block_buff;
+    current_block = the_object->head;
+
+    while (current_block->next != NULL) {
+        current_block = current_block->next;
+    }
+
+    current_block->stream_content = block_buff;
+    current_block->next = empty_block;
 
     mutex_unlock(&(the_object->operation_synchronizer));
+
+    printk("%s: [head] written %ld bytes, %s\n", MODNAME, strlen(the_object->head->stream_content), the_object->head->stream_content);
+    printk("%s: [curr] written %ld bytes, %s\n", MODNAME, strlen(current_block->stream_content), current_block->stream_content);
 
     ret = clear_user(buff, len);
     printk("%s: write clear_user %d\n", MODNAME, ret);
@@ -121,7 +133,8 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
 static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off) {
     int minor = get_minor(filp);
     int ret;
-    int block_size;
+    long block_size;
+    int to_read;
     object_state *the_object;
     stream_block *current_block;
     stream_block *completed_block;
@@ -141,12 +154,14 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off) 
     //     return 0;
     // }
 
-    block_size = strlen(current_block->stream_content);
     current_block = the_object->head;
-    int to_read = len;
+    block_size = strlen(current_block->stream_content);
+    to_read = len;
     // printk("%s: valid_bytes: %d, len: %lu\n", MODNAME, the_object->valid_bytes, len);
 
     while (to_read != 0) {
+        printk("%s: to_read: %d, block_size: %ld, read_off: %d\n", MODNAME, to_read, block_size, current_block->read_offset);
+
         if (block_size - current_block->read_offset < to_read) {
             // TODO devo proseguire la lettura nel blocco successivo
             printk("%s: cross block read", MODNAME);
@@ -165,7 +180,7 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off) 
             kfree(completed_block);
 
         } else {
-            ret = copy_to_user(buff, &(current_block->stream_content[current_block->read_offset]), len);
+            ret = copy_to_user(&buff[ret], &(current_block->stream_content[current_block->read_offset]), len);
             printk("%s: copy_to_user ret: %d", MODNAME, ret);
             current_block->read_offset += (len - ret);
             mutex_unlock(&(the_object->operation_synchronizer));
@@ -210,14 +225,13 @@ int init_module(void) {
     // Inizializzo lo stato di ogni device.
     for (i = 0; i < MINORS; i++) {
         mutex_init(&(objects[i].operation_synchronizer));
+
+        // Allocazione per il primo blocco di stream
+        objects[i].head = kzalloc(sizeof(stream_block), GFP_KERNEL);
         objects[i].head->next = NULL;
         objects[i].head->stream_content = NULL;
         objects[i].head->read_offset = 0;
         objects[i].valid_bytes = 0;
-
-        // Allocazione per il primo blocco di stream
-        objects[i].head = kzalloc(sizeof(stream_block), GFP_KERNEL);
-        objects[i].tail = objects[i].head;
 
         if (objects[i].head == NULL) goto revert_allocation;
     }

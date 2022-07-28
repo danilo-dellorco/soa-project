@@ -23,5 +23,5 @@ typedef struct _object_state {
     struct mutex operation_synchronizer;  // Lock sullo specifico device, per sincronizzare l'accesso di thread concorrenti
     int valid_bytes;                      // TODO valutare l'utilità
     stream_block *head;                   // Puntatore al primo blocco dati dello stream
-    stream_block *tail;                   // Puntatore all' ultimo blocco dati dello stream. Permette di appendere più velocemente uno stream block
+    // stream_block *tail;                   // Puntatore all' ultimo blocco dati dello stream. Permette di appendere più velocemente uno stream block
 } object_state;

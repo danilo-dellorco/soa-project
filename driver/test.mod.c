@@ -33,13 +33,13 @@ __used __section("__versions") = {
 	{ 0x4fd3ca9d, "__register_chrdev" },
 	{ 0xcefb0c9f, "__mutex_init" },
 	{ 0x13c49cc2, "_copy_from_user" },
-	{ 0xeb233a45, "__kmalloc" },
 	{ 0x72c26d96, "kmem_cache_alloc_trace" },
 	{ 0x9dc7c3ab, "kmalloc_caches" },
-	{ 0x37a0cba, "kfree" },
-	{ 0x3213f038, "mutex_unlock" },
+	{ 0xeb233a45, "__kmalloc" },
 	{ 0x6b10bee1, "_copy_to_user" },
 	{ 0x88db9f48, "__check_object_size" },
+	{ 0x3213f038, "mutex_unlock" },
+	{ 0x37a0cba, "kfree" },
 	{ 0x754d539c, "strlen" },
 	{ 0x4dfa8d4b, "mutex_lock" },
 	{ 0xd8cef6e1, "clear_user" },
@@ -50,4 +50,4 @@ __used __section("__versions") = {
 MODULE_INFO(depends, "");
 
 
-MODULE_INFO(srcversion, "76744BC1AECA2CA490FEF4D");
+MODULE_INFO(srcversion, "1A9E80C10B3AB7C66417D60");
