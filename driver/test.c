@@ -98,19 +98,15 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
     mutex_lock(&(the_object->operation_synchronizer));
 
     ret = copy_from_user(block_buff, buff, len);
-    printk("%s: copy_from_user: %d, \n", MODNAME, ret, strlen(block_buff));
 
     *off += (len - ret);
     the_object->valid_bytes = *off;
 
-    current_block = the_object->head;
-
-    while (current_block->next != NULL) {
-        current_block = current_block->next;
-    }
+    current_block = the_object->tail;
 
     current_block->stream_content = block_buff;
     current_block->next = empty_block;
+    the_object->tail = empty_block;
 
     mutex_unlock(&(the_object->operation_synchronizer));
 
@@ -155,6 +151,10 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off) 
     // }
 
     current_block = the_object->head;
+    if (current_block->stream_content == NULL) {
+        printk("%s: No data to read in current block\n", MODNAME);
+        return 0;
+    }
     block_size = strlen(current_block->stream_content);
     to_read = len;
     // printk("%s: valid_bytes: %d, len: %lu\n", MODNAME, the_object->valid_bytes, len);
@@ -163,7 +163,6 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off) 
         printk("%s: to_read: %d, block_size: %ld, read_off: %d\n", MODNAME, to_read, block_size, current_block->read_offset);
 
         if (block_size - current_block->read_offset < to_read) {
-            // TODO devo proseguire la lettura nel blocco successivo
             printk("%s: cross block read", MODNAME);
             len = block_size - current_block->read_offset;
             to_read -= len;
@@ -179,9 +178,17 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off) 
             kfree(completed_block->stream_content);
             kfree(completed_block);
 
+            // Siamo nell'ultimo blocco, quindi abbiamo letto tutti i dati dello stream
+            if (current_block->next->stream_content == NULL) {
+                the_object->head = current_block->next;
+                the_object->tail = current_block->next;
+                break;
+            }
+
         } else {
-            ret = copy_to_user(&buff[ret], &(current_block->stream_content[current_block->read_offset]), len);
+            ret = copy_to_user(&buff[ret], &(current_block->stream_content[current_block->read_offset]), to_read);
             printk("%s: copy_to_user ret: %d", MODNAME, ret);
+            to_read = 0;
             current_block->read_offset += (len - ret);
             mutex_unlock(&(the_object->operation_synchronizer));
         }
@@ -228,6 +235,7 @@ int init_module(void) {
 
         // Allocazione per il primo blocco di stream
         objects[i].head = kzalloc(sizeof(stream_block), GFP_KERNEL);
+        objects[i].tail = objects[i].head;
         objects[i].head->next = NULL;
         objects[i].head->stream_content = NULL;
         objects[i].head->read_offset = 0;
