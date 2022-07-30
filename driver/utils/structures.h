@@ -14,6 +14,7 @@ typedef struct _stream_block {
     int read_offset;             // Mantiene l'offset di lettura del blocco corrente
     char *stream_content;        // Il nodo di I/O è un buffer di memoria, che viene puntato tramite questo campo
     struct _stream_block *next;  // Puntatore al blocco di stream successivo
+    int id;                      // ID progressivo del blocco, utile per debugging
 } stream_block;
 
 /**

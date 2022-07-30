@@ -85,7 +85,6 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
     char *block_buff;
 
     int ret;
-    int cls;
 
     // Blocco vuoto per la scrittura successiva. E' il blocco successivo a quello attualmente scritto
     empty_block = kzalloc(sizeof(stream_block), GFP_ATOMIC);
@@ -102,12 +101,11 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
 
     ret = copy_from_user(block_buff, buff, len);
 
-    printk("%s: copy_from_user | ret %d, data %s\n", MODNAME, ret, block_buff);
-
     *off += (len - ret);
     the_object->valid_bytes = *off;
 
     current_block = the_object->tail;
+    empty_block->id = current_block->id + 1;
 
     current_block->stream_content = block_buff;
     current_block->next = empty_block;
@@ -115,11 +113,11 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
 
     mutex_unlock(&(the_object->operation_synchronizer));
 
-    printk("%s: [head] written %ld bytes, %s\n", MODNAME, strlen(the_object->head->stream_content), the_object->head->stream_content);
-    printk("%s: [curr] written %ld bytes, %s\n", MODNAME, strlen(current_block->stream_content), current_block->stream_content);
+    printk("%s: written %ld bytes in block %d: '%s'\n", MODNAME, strlen(current_block->stream_content), current_block->id, current_block->stream_content);
+    printk("%s: allocated space for new tail in block %d\n", MODNAME, the_object->tail->id);
 
-    cls = clear_user(&buff, len);
-    printk("%s: clear_user ret %d\n", MODNAME, ret);
+    // cls = clear_user(buff, len);
+    // printk("%s: clear_user ret %d\n", MODNAME, ret);
 
     return len - ret;
 }
@@ -139,26 +137,23 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off) 
     long block_size;
     int to_read;
     int bytes_read;
+    int old_id;
     object_state *the_object;
     stream_block *current_block;
     stream_block *completed_block;
 
-    cls = clear_user(&buff, len);
+    cls = clear_user(buff, len);
 
     the_object = objects + minor;
-    printk("%s: somebody called a read on dev with [major,minor] number [%d,%d]\n", MODNAME, get_major(filp), get_minor(filp));
+    printk("%s: somebody called a read of %ld bytes on dev [%d,%d]\n", MODNAME, len, get_major(filp), get_minor(filp));
 
-    // need to lock in any case
     mutex_lock(&(the_object->operation_synchronizer));
-    // if (the_object->read_offset > the_object->valid_bytes) {
-    //     printk("%s: read lock error (1)", MODNAME);
-    //     mutex_unlock(&(the_object->operation_synchronizer));
-    //     return 0;
-    // }
-
     current_block = the_object->head;
+    printk("%s: start reading from head - block%d \n", MODNAME, current_block->id);
+
     if (current_block->stream_content == NULL) {
         printk("%s: No data to read in current block\n", MODNAME);
+        mutex_unlock(&(the_object->operation_synchronizer));
         return 0;
     }
 
@@ -169,38 +164,46 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off) 
         block_size = strlen(current_block->stream_content);
         printk("%s: to_read: %d, block_size: %ld, read_off: %d\n", MODNAME, to_read, block_size, current_block->read_offset);
 
+        // Richiesta la lettura di più byte rispetto a quelli da leggere nel blocco corrente
         if (block_size - current_block->read_offset < to_read) {
-            printk("%s: cross block read", MODNAME);
+            printk("%s: cross block read in block %d", MODNAME, current_block->id);
             block_residual = block_size - current_block->read_offset;
             to_read -= block_residual;
             ret = copy_to_user(&buff[bytes_read], &(current_block->stream_content[current_block->read_offset]), block_residual);
             bytes_read += (block_residual - ret);
 
+            printk("%s: block %d fully read.", MODNAME, current_block->id);
             // Sposto logicamente l'inizio dello stream al blocco successivo.
+            old_id = current_block->id;
             completed_block = current_block;
             current_block = current_block->next;
             the_object->head = current_block;
 
-            // Sono stati letti tutti i dati dal blocco, quindi posso liberare la rispettiva area di memoria
+            printk("--- head | %d -> %d ", old_id, the_object->head->id);
+
+            // Sono stati letti tutti i dati dal blocco precedente, quindi posso liberare la rispettiva area di memoria.
             kfree(completed_block->stream_content);
             kfree(completed_block);
 
+            printk("--- free | deallocated block %d memory", old_id);
+
             // Siamo nell'ultimo blocco, quindi abbiamo letto tutti i dati dello stream
             if (current_block->stream_content == NULL) {
-                the_object->head = current_block->next;
-                the_object->tail = current_block->next;
+                the_object->head = current_block;
+                the_object->tail = current_block;
+                printk("%s: stream completed, read %d bytes", MODNAME, bytes_read);
                 mutex_unlock(&(the_object->operation_synchronizer));
-                printk("%s: return (1) read %d bytes", MODNAME, bytes_read);
                 return bytes_read;
             }
 
+            // Il numero di byte richiesti sono presenti nel blocco corrente
         } else {
-            printk("%s: whole block read", MODNAME);
+            printk("%s: whole block read in block %d| block content: '%s'", MODNAME, current_block->id, &current_block->stream_content[current_block->read_offset]);
             ret = copy_to_user(&buff[bytes_read], &(current_block->stream_content[current_block->read_offset]), to_read);
             bytes_read += (to_read - ret);
             current_block->read_offset += (to_read - ret);
+            printk("%s: read completed %d bytes", MODNAME, bytes_read);
             mutex_unlock(&(the_object->operation_synchronizer));
-            printk("%s: return (2) read %d bytes", MODNAME, bytes_read);
             return bytes_read;
         }
     }
@@ -214,7 +217,7 @@ static long dev_ioctl(struct file *filp, unsigned int command, unsigned long par
     object_state *the_object;
 
     the_object = objects + minor;
-    printk("%s: somebody called an ioctl on dev with [major,minor] number [%d,%d] and command %u \n", MODNAME, get_major(filp), get_minor(filp), command);
+    printk("%s: somebody called an ioctl on dev [%d,%d] and command %u \n", MODNAME, get_major(filp), get_minor(filp), command);
 
     // do here whathever you would like to control the state of the device
     return 0;
@@ -244,6 +247,7 @@ int init_module(void) {
 
         // Allocazione per il primo blocco di stream
         objects[i].head = kzalloc(sizeof(stream_block), GFP_KERNEL);
+        objects[i].head->id = 0;
         objects[i].tail = objects[i].head;
         objects[i].head->next = NULL;
         objects[i].head->stream_content = NULL;

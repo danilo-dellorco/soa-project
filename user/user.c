@@ -77,7 +77,7 @@ void wait_input(void) {
 }
 
 void clear_buffer() {
-    memset(data_buff, 0, strlen(data_buff));
+    memset(data_buff, 0, 4096);
 }
 
 int main(int argc, char** argv) {
@@ -127,7 +127,7 @@ int main(int argc, char** argv) {
 }
 
 int open_device() {
-    printf("\nInsert Minor Number of the device driver to open: ");
+    printf("Insert Minor Number of the device driver to open: ");
     fgets(data_buff, sizeof(data_buff), stdin);
 
     if (atoi(data_buff) < 0 || atoi(data_buff) > 127) {
@@ -186,24 +186,17 @@ int read_op() {
     fgets(data_buff, sizeof(data_buff), stdin);
 
     if (atoi(data_buff) < 0) {
-        printf("Insert a positive byte quantity to read");
+        printf("Insert a positive byte quantity to read\n");
         return (-1);
     }
     amount = atoi(data_buff);
 
     clear_buffer();
-
-    if (errno == ERANGE || errno == EINVAL)
-        printf(COLOR_RED "\nRead: the amount of data inserted is not valid \n" COLOR_RESET);
+    res = read(device_fd, data_buff, min(amount, 4096));
+    if (res == 0 || res == -1)
+        printf(COLOR_RED "\nRead result: no data was read from the device file \n" COLOR_RESET);
     else {
-        res = read(device_fd, data_buff, min(amount, 4096));
-        if (res == 0 || res == -1)
-            printf(COLOR_RED "\nRead result: no data was read from the device file \n" COLOR_RESET);
-        else {
-            printf(COLOR_GREEN "\nRead result (%d bytes): ", res);
-            printf(COLOR_RESET);
-            printf("%s\n\n", data_buff);
-        }
+        printf("\n%sRead result (%d bytes)%s:%s\n\n", COLOR_GREEN, res, COLOR_RESET, data_buff);
     }
 }
 
