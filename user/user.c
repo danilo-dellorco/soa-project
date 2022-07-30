@@ -14,6 +14,7 @@ char data_buff[4096];
 int cmd;
 int device_fd = -1;
 int minor;
+int major;
 char* device_path;
 char opened_device[64] = "none";
 #define DATA "driver test\n"
@@ -69,7 +70,7 @@ void myflush(FILE* in) {
 }
 
 void wait_input(void) {
-    myflush(stdin);
+    // myflush(stdin);
     printf("Press [Enter] to continue...");
     fflush(stdout);
     getchar();
@@ -80,11 +81,12 @@ void clear_buffer() {
 }
 
 int main(int argc, char** argv) {
-    if (argc < 2) {
-        printf("usage: sudo ./user DEVICE_PATH\n");
+    if (argc < 3) {
+        printf("usage: sudo ./user DEVICE_PATH MAJOR\n");
         return -1;
     }
     device_path = argv[1];
+    major = atoi(argv[2]);
 
     while (1) {
         show_menu();
@@ -126,7 +128,14 @@ int main(int argc, char** argv) {
 
 int open_device() {
     printf("\nInsert Minor Number of the device driver to open: ");
-    scanf("%d", &minor);
+    fgets(data_buff, sizeof(data_buff), stdin);
+
+    if (atoi(data_buff) < 0 || atoi(data_buff) > 127) {
+        printf("Insert a valid minor, between 0 and 127");
+        return (-1);
+    }
+    minor = atoi(data_buff);
+    clear_buffer();
 
     if (device_fd != -1) {
         printf("device %s is already opened. Closing.\n", opened_device);
@@ -153,7 +162,7 @@ int write_op() {
     int res;
     clear_buffer();
     printf("Insert the data you want to write (max 4096): ");
-    scanf("%s", data_buff);
+    fgets(data_buff, sizeof(data_buff), stdin);
 
     res = write(device_fd, data_buff, min(strlen(data_buff), 4096));
     if (res == 0 || res == -1)
@@ -173,7 +182,13 @@ int read_op() {
     printf("Insert the amount of data you want to read (max 4096): ");
     int amount;
     int res;
-    scanf("%d", &amount);
+    fgets(data_buff, sizeof(data_buff), stdin);
+
+    if (atoi(data_buff) < 0) {
+        printf("Insert a positive byte quantity to read");
+        return (-1);
+    }
+    amount = atoi(data_buff);
 
     clear_buffer();
 
@@ -204,26 +219,19 @@ int show_menu() {
         printf(COLOR_RESET);
     }
     printf("\n\nInsert your command: ");
-    scanf("%d", &cmd);
+    fgets(data_buff, sizeof(data_buff), stdin);
+    cmd = atoi(data_buff);
+    clear_buffer();
 }
 
 int create_nodes() {
-    int minors;
-    int major;
-    clear_buffer();
-
-    printf("\nInsert Major Number of the device driver: ");
-    scanf("%d", &major);
-    printf("Insert Number of nodes to create: ");
-    scanf("%d", &minors);
-
+    int minors = 3;  // TODO 128
     printf("Creating %d minors for device %s with major %d\n", minors, device_path, major);
 
     for (i = 0; i < minors; i++) {
         sprintf(data_buff, "mknod %s%d c %d %i\n", device_path, i, major, i);
         system(data_buff);
         sprintf(data_buff, "%s%d", device_path, i);
-        // pthread_create(&tid, NULL, the_thread, strdup(buff));
     }
 }
 
@@ -233,6 +241,10 @@ int delete_nodes() {
     printf("Deleting all minors for device %s\n", device_path);
     sprintf(data_buff, "rm %s*\n", device_path);
     printf(" > %s", data_buff);
+    if (device_fd != -1) {
+        printf("device %s is opened. Closing.\n", opened_device);
+        close(device_fd);
+    }
     system(data_buff);
 }
 
