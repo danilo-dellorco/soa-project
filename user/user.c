@@ -9,6 +9,8 @@
 #include <sys/ioctl.h>
 #include <unistd.h>
 
+#define NUM_DEVICES 3  // TODO set to 128
+
 int i;
 char data_buff[4096];
 int cmd;
@@ -31,21 +33,29 @@ char opened_device[64] = "none";
 #define RESET "\x1B[0m"
 #define BOLD "\x1B[1m"
 
-char* menu_list[] = {
+char* main_menu_list[] = {
+    "--------- OPERATIONS ---------",
     "0)  Open a device file",
     "1)  Write on the device file",
     "2)  Read from the device file",
-    "3)  Switch to high priority",
-    "4)  Switch to low priority",
-    "5)  Use blocking operations",
-    "6)  Use non-blocking operations",
-    "7)  Enable a device file",
-    "8)  Disable a device file",
-    "9)  Create device nodes",
-    "10) Delete all device nodes",
+    "",
+    "------ SESSION SETTINGS ------",
+    "3)  Switch to HIGH priority",
+    "4)  Switch to LOW priority",
+    "5)  Use BLOCKING operations",
+    "6)  Use NON-BLOCKING operations",
+    "7)  Set timeout",
+    "",
+    "------ DEVICE MANAGEMENT ------",
+    "8)  Enable a device file",
+    "9)  Disable a device file",
+    "10) See device status",
+    "11) Create device nodes",
+    "",
+    "-------------------------------",
     "-1) Exit",
 };
-int menu_size = sizeof(menu_list) / sizeof(char*);
+int menu_size = sizeof(main_menu_list) / sizeof(char*);
 
 int show_menu();
 int create_nodes();
@@ -91,7 +101,6 @@ int main(int argc, char** argv) {
 
     while (1) {
         show_menu();
-
         switch (cmd) {
             case (0):
                 open_device();
@@ -105,12 +114,40 @@ int main(int argc, char** argv) {
                 read_op();
                 wait_input();
                 break;
+            case (3):
+                printf("'switch to high priority' not implemented yet.\n");
+                wait_input();
+                break;
+            case (4):
+                printf("'switch to low priority' not implemented yet.\n");
+                wait_input();
+                break;
+            case (5):
+                printf("'use blocking operations' not implemented yet.\n");
+                wait_input();
+                break;
+            case (6):
+                printf("'use non-blocking operations' not implemented yet.\n");
+                wait_input();
+                break;
+            case (7):
+                printf("'set timeout' not implemented yet.\n");
+                wait_input();
+                break;
+            case (8):
+                printf("'enable device file' not implemented yet.\n");
+                wait_input();
+                break;
             case (9):
-                create_nodes();
+                printf("'disable device file' not implemented yet.\n");
                 wait_input();
                 break;
             case (10):
-                delete_nodes();
+                printf("'see device status' not implemented yet.\n");
+                wait_input();
+                break;
+            case (11):
+                create_nodes();
                 wait_input();
                 break;
             case (-1):
@@ -218,7 +255,7 @@ int show_menu() {
 
     for (i = 0; i < menu_size; ++i) {
         printf(COLOR_YELLOW "│ ");
-        printf("%s%s%s\n", COLOR_BLUE, menu_list[i], COLOR_RESET);
+        printf("%s%s%s\n", COLOR_BLUE, main_menu_list[i], COLOR_RESET);
     }
     printf(COLOR_YELLOW "├───────────────────────────────────────────┤\n" COLOR_RESET);
     printf(COLOR_YELLOW "│" COLOR_RESET);
@@ -230,10 +267,10 @@ int show_menu() {
 }
 
 int create_nodes() {
-    int minors = 3;  // TODO 128
-    printf("Creating %d minors for device %s with major %d\n", minors, device_path, major);
+    printf("Creating %d minors for device %s with major %d\n", NUM_DEVICES, device_path, major);
 
-    for (i = 0; i < minors; i++) {
+    delete_nodes();
+    for (i = 0; i < NUM_DEVICES; i++) {
         sprintf(data_buff, "mknod %s%d c %d %i\n", device_path, i, major, i);
         system(data_buff);
         sprintf(data_buff, "%s%d", device_path, i);

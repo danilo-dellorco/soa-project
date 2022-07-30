@@ -1,13 +1,8 @@
-#define EXPORT_SYMTAB
 
 #include "utils/structures.h"
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Danilo Dell'Orco");
-
-#define MODNAME "MULTI-FLOW DEV"
-#define DEVICE_NAME "test-dev" /* Device file name in /dev/ - not mandatory  */
-
 /*
  * Prototipi delle funzioni del driver
  */
@@ -32,15 +27,8 @@ static int Major; /* Major number assigned to broadcast device driver */
  * Dobbiamo gestire 128 dispositivi di I/O, quindi 128 minor numbers differenti.
  * Definiamo quindi 128 differenti strutture object_state mantenute nell'array objects
  **/
-#define MINORS 3
-object_state objects[MINORS];
+object_state objects[NUM_DEVICES];
 
-//
-//
-//
-//
-//
-//
 /* the actual driver */
 
 /*
@@ -51,7 +39,7 @@ static int dev_open(struct inode *inode, struct file *file) {
     int minor;
     minor = get_minor(file);
 
-    if (minor >= MINORS) {
+    if (minor >= NUM_DEVICES) {
         return -ENODEV;
     }
 
@@ -211,6 +199,13 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off) 
 
 /**
  * Permette di controllare i parametri della sessione di I/O
+ * 3)  Switch to HIGH priority
+ * 4)  Switch to LOW priority
+ * 5)  Use BLOCKING operations
+ * 6)  Use NON-BLOCKING operations
+ * 7)  Set timeout
+ * 8)  Enable a device file
+ * 9)  Disable a device file
  */
 static long dev_ioctl(struct file *filp, unsigned int command, unsigned long param) {
     session_state *session;
@@ -218,44 +213,51 @@ static long dev_ioctl(struct file *filp, unsigned int command, unsigned long par
 
     switch (command) {
         case 3:
-            session->priority = LOW_PRIORITY;
-            AUDIT printk(
-                "%s: somebody has set priority level to LOW on dev with "
-                "[major,minor] number [%d,%d] and command %u \n",
+            session->priority = HIGH_PRIORITY;
+            printk(
+                "%s: somebody has set priority level to LOW on [%d,%d] and command %u \n",
                 MODNAME, get_major(filp), get_minor(filp), command);
             break;
         case 4:
-            session->priority = HIGH_PRIORITY;
-            AUDIT printk(
-                "%s: somebody has set priority level to HIGH on dev with "
-                "[major,minor] number [%d,%d] and command %u \n",
+            session->priority = LOW_PRIORITY;
+            printk(
+                "%s: somebody has set priority level to HIGH on [%d,%d] and command %u \n",
                 MODNAME, get_major(filp), get_minor(filp), command);
             break;
         case 5:
             session->blocking = BLOCKING;
-            AUDIT printk(
-                "%s: somebody has set BLOCKING r/w op on dev with "
-                "[major,minor] number [%d,%d] and command %u \n",
+            printk(
+                "%s: somebody has set BLOCKING read & write on [%d,%d] and command %u \n",
                 MODNAME, get_major(filp), get_minor(filp), command);
             break;
         case 6:
             session->blocking = NON_BLOCKING;
-            AUDIT printk(
-                "%s: somebody has set NON-BLOCKING r/w on dev with "
+            printk(
+                "%s: somebody has set NON-BLOCKING read & write on [%d,%d] and command %u \n",
                 "[major,minor] number [%d,%d] and command %u \n",
                 MODNAME, get_major(filp), get_minor(filp), command);
             break;
         case 7:
             session->timeout = param;
-            AUDIT printk(
-                "%s: somebody has set TIMEOUT on dev with "
-                "[major,minor] number [%d,%d] and command %u \n",
+            printk(
+                "%s: somebody has set TIMEOUT on [%d,%d] and command %u \n",
+                MODNAME, get_major(filp), get_minor(filp), command);
+            break;
+        case 8:
+            device_enabling[get_minor(filp)] = ENABLED;
+            printk(
+                "%s: somebody enabled the device [%d,%d] and command %u \n",
+                MODNAME, get_major(filp), get_minor(filp), command);
+            break;
+        case 9:
+            device_enabling[get_minor(filp)] = DISABLED;
+            printk(
+                "%s: somebody disabled the device [%d,%d] and command %u \n",
                 MODNAME, get_major(filp), get_minor(filp), command);
             break;
         default:
-            AUDIT printk(
-                "%s: somebody called an invalid setting on dev with "
-                "[major,minor] number [%d,%d] and command %u \n",
+            printk(
+                "%s: somebody called an illegal command on [%d,%d]%u \n",
                 MODNAME, get_major(filp), get_minor(filp), command);
     }
     return 0;
@@ -280,7 +282,7 @@ int init_module(void) {
     int i;
 
     // Inizializzo lo stato di ogni device.
-    for (i = 0; i < MINORS; i++) {
+    for (i = 0; i < NUM_DEVICES; i++) {
         mutex_init(&(objects[i].operation_synchronizer));
 
         // Allocazione per il primo blocco di stream

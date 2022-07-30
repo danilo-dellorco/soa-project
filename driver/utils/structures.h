@@ -7,6 +7,43 @@
 #include <linux/tty.h>     /* For the tty declarations */
 #include <linux/version.h> /* For LINUX_VERSION_CODE */
 
+#define NUM_DEVICES 3  // TODO set to 128
+
+#define LOW_PRIORITY 0
+#define HIGH_PRIORITY 1
+
+#define BLOCKING 0
+#define NON_BLOCKING 1
+
+#define DISABLED 0
+#define ENABLED 1
+
+#define MODNAME "MULTI-FLOW DEV"
+#define DEVICE_NAME "test-dev" /* Device file name in /dev/ - not mandatory  */
+
+// TODO tutti i check su stato enabled/disabled
+
+/**
+ *  Parametri del modulo
+ */
+// Posso scrivere sullo pseudofile per abilitare o disabilitare uno specifico device
+unsigned long device_enabling[NUM_DEVICES];
+module_param_array(device_enabling, int, NULL, 0660);
+
+// Non posso modificare manualmente il numero dei bytes o il numero di thread in attesa, in quanto sono informazioni controllate indirettamente dal modulo.
+// Posso comunque leggere queste informazioni
+unsigned long total_bytes_low[NUM_DEVICES];
+module_param_array(total_bytes_low, int, NULL, 0440);
+
+unsigned long total_bytes_high[NUM_DEVICES];
+module_param_array(total_bytes_high, int, NULL, 0440);
+
+unsigned long waiting_threads_low[NUM_DEVICES];
+module_param_array(waiting_threads_low, int, NULL, 0440);
+
+unsigned long waiting_threads_high[NUM_DEVICES];
+module_param_array(waiting_threads_high, int, NULL, 0440);
+
 /**
  * Blocco dati relativo allo stream
  */
