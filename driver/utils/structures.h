@@ -22,7 +22,12 @@ typedef struct _stream_block {
  */
 typedef struct _object_state {
     struct mutex operation_synchronizer;  // Lock sullo specifico device, per sincronizzare l'accesso di thread concorrenti
-    int valid_bytes;                      // TODO valutare l'utilità
+    int total_bytes;                      // Totale di bytes non letti presenti in tutti i blocchi dello stream
     stream_block *head;                   // Puntatore al primo blocco dati dello stream
     stream_block *tail;                   // Puntatore all' ultimo blocco dati dello stream. Permette di appendere più velocemente uno stream block
 } object_state;
+
+typedef struct _session_state {
+    int blocking;  // Operazioni bloccanti o non-bloccanti
+    int priority;  // Livello di priorità della sessione [0,1] = [low,high]
+} session_state;

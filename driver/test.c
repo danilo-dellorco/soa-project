@@ -101,8 +101,7 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
 
     ret = copy_from_user(block_buff, buff, len);
 
-    *off += (len - ret);
-    the_object->valid_bytes = *off;
+    the_object->total_bytes += (len - ret);
 
     current_block = the_object->tail;
     empty_block->id = current_block->id + 1;
@@ -114,11 +113,7 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
     mutex_unlock(&(the_object->operation_synchronizer));
 
     printk("%s: written %ld bytes in block %d: '%s'\n", MODNAME, strlen(current_block->stream_content), current_block->id, current_block->stream_content);
-    printk("%s: allocated space for new tail in block %d\n", MODNAME, the_object->tail->id);
-
-    // cls = clear_user(buff, len);
-    // printk("%s: clear_user ret %d\n", MODNAME, ret);
-
+    // printk("%s: allocated space for new tail in block %d\n", MODNAME, the_object->tail->id);
     return len - ret;
 }
 
@@ -151,6 +146,7 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off) 
     current_block = the_object->head;
     printk("%s: start reading from head - block%d \n", MODNAME, current_block->id);
 
+    // Non sono presenti dati nello stream
     if (current_block->stream_content == NULL) {
         printk("%s: No data to read in current block\n", MODNAME);
         mutex_unlock(&(the_object->operation_synchronizer));
@@ -162,7 +158,7 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off) 
 
     while (1) {
         block_size = strlen(current_block->stream_content);
-        printk("%s: to_read: %d, block_size: %ld, read_off: %d\n", MODNAME, to_read, block_size, current_block->read_offset);
+        // printk("%s: to_read: %d, block_size: %ld, read_off: %d\n", MODNAME, to_read, block_size, current_block->read_offset);
 
         // Richiesta la lettura di più byte rispetto a quelli da leggere nel blocco corrente
         if (block_size - current_block->read_offset < to_read) {
@@ -187,6 +183,8 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off) 
 
             printk("--- free | deallocated block %d memory", old_id);
 
+            the_object->total_bytes -= bytes_read;
+
             // Siamo nell'ultimo blocco, quindi abbiamo letto tutti i dati dello stream
             if (current_block->stream_content == NULL) {
                 the_object->head = current_block;
@@ -195,13 +193,15 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off) 
                 mutex_unlock(&(the_object->operation_synchronizer));
                 return bytes_read;
             }
+        }
 
-            // Il numero di byte richiesti sono presenti nel blocco corrente
-        } else {
+        // Il numero di byte richiesti sono presenti nel blocco corrente
+        else {
             printk("%s: whole block read in block %d| block content: '%s'", MODNAME, current_block->id, &current_block->stream_content[current_block->read_offset]);
             ret = copy_to_user(&buff[bytes_read], &(current_block->stream_content[current_block->read_offset]), to_read);
             bytes_read += (to_read - ret);
             current_block->read_offset += (to_read - ret);
+            the_object->total_bytes -= bytes_read;
             printk("%s: read completed %d bytes", MODNAME, bytes_read);
             mutex_unlock(&(the_object->operation_synchronizer));
             return bytes_read;
@@ -213,13 +213,51 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off) 
  * Permette di controllare i parametri della sessione di I/O
  */
 static long dev_ioctl(struct file *filp, unsigned int command, unsigned long param) {
-    int minor = get_minor(filp);
-    object_state *the_object;
+    session_state *session;
+    session = filp->private_data;
 
-    the_object = objects + minor;
-    printk("%s: somebody called an ioctl on dev [%d,%d] and command %u \n", MODNAME, get_major(filp), get_minor(filp), command);
-
-    // do here whathever you would like to control the state of the device
+    switch (command) {
+        case 3:
+            session->priority = LOW_PRIORITY;
+            AUDIT printk(
+                "%s: somebody has set priority level to LOW on dev with "
+                "[major,minor] number [%d,%d] and command %u \n",
+                MODNAME, get_major(filp), get_minor(filp), command);
+            break;
+        case 4:
+            session->priority = HIGH_PRIORITY;
+            AUDIT printk(
+                "%s: somebody has set priority level to HIGH on dev with "
+                "[major,minor] number [%d,%d] and command %u \n",
+                MODNAME, get_major(filp), get_minor(filp), command);
+            break;
+        case 5:
+            session->blocking = BLOCKING;
+            AUDIT printk(
+                "%s: somebody has set BLOCKING r/w op on dev with "
+                "[major,minor] number [%d,%d] and command %u \n",
+                MODNAME, get_major(filp), get_minor(filp), command);
+            break;
+        case 6:
+            session->blocking = NON_BLOCKING;
+            AUDIT printk(
+                "%s: somebody has set NON-BLOCKING r/w on dev with "
+                "[major,minor] number [%d,%d] and command %u \n",
+                MODNAME, get_major(filp), get_minor(filp), command);
+            break;
+        case 7:
+            session->timeout = param;
+            AUDIT printk(
+                "%s: somebody has set TIMEOUT on dev with "
+                "[major,minor] number [%d,%d] and command %u \n",
+                MODNAME, get_major(filp), get_minor(filp), command);
+            break;
+        default:
+            AUDIT printk(
+                "%s: somebody called an invalid setting on dev with "
+                "[major,minor] number [%d,%d] and command %u \n",
+                MODNAME, get_major(filp), get_minor(filp), command);
+    }
     return 0;
 }
 
@@ -228,7 +266,7 @@ static long dev_ioctl(struct file *filp, unsigned int command, unsigned long par
  */
 
 static struct file_operations fops = {
-    .owner = THIS_MODULE,  // do not forget this
+    .owner = THIS_MODULE,
     .write = dev_write,
     .read = dev_read,
     .open = dev_open,
@@ -252,7 +290,7 @@ int init_module(void) {
         objects[i].head->next = NULL;
         objects[i].head->stream_content = NULL;
         objects[i].head->read_offset = 0;
-        objects[i].valid_bytes = 0;
+        objects[i].total_bytes = 0;
 
         if (objects[i].head == NULL) goto revert_allocation;
     }

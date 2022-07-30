@@ -32,18 +32,18 @@ char opened_device[64] = "none";
 #define BOLD "\x1B[1m"
 
 char* menu_list[] = {
-    "|0  |  Open a device file",
-    "|1  |  Write on the device file",
-    "|2  |  Read from the device file",
-    "|3  |  Switch to high priority flow",
-    "|4  |  Switch to low priority flow",
-    "|5  |  Make operations blocking",
-    "|6  |  Make operations non blocking",
-    "|7  |  Enable a device file",
-    "|8  |  Disable a device file",
-    "|9  |  Create device nodes",
-    "|10 |  Delete all device nodes",
-    "|-1 |  Exit",
+    "0)  Open a device file",
+    "1)  Write on the device file",
+    "2)  Read from the device file",
+    "3)  Switch to high priority",
+    "4)  Switch to low priority",
+    "5)  Use blocking operations",
+    "6)  Use non-blocking operations",
+    "7)  Enable a device file",
+    "8)  Disable a device file",
+    "9)  Create device nodes",
+    "10) Delete all device nodes",
+    "-1) Exit",
 };
 int menu_size = sizeof(menu_list) / sizeof(char*);
 
@@ -71,7 +71,8 @@ void myflush(FILE* in) {
 
 void wait_input(void) {
     // myflush(stdin);
-    printf("Press [Enter] to continue...");
+    printf("───────────────────────────────────────────────────────────\n");
+    printf("Press %s[Enter]%s to continue...", BOLD, RESET);
     fflush(stdout);
     getchar();
 }
@@ -148,6 +149,7 @@ int open_device() {
     if (device_fd == -1) {
         printf("open error on device %s\n", opened_device);
         sprintf(opened_device, "none");
+        device_fd = -1;
         return (-1);
     }
     printf("device %s successfully opened, fd is: %d\n", opened_device, device_fd);
@@ -180,7 +182,7 @@ int read_op() {
         return -1;
     }
 
-    printf("Insert the amount of data you want to read (max 4096): ");
+    printf("Insert the amount of data you want to read: ");
     int amount;
     int res;
     fgets(data_buff, sizeof(data_buff), stdin);
@@ -194,26 +196,35 @@ int read_op() {
     clear_buffer();
     res = read(device_fd, data_buff, min(amount, 4096));
     if (res == 0 || res == -1)
-        printf(COLOR_RED "\nRead result: no data was read from the device file \n" COLOR_RESET);
+        printf(COLOR_RED "\nRead result | no data was read from the device file \n" COLOR_RESET);
     else {
-        printf("\n%sRead result (%d bytes)%s:%s\n\n", COLOR_GREEN, res, COLOR_RESET, data_buff);
+        printf("\n%sRead result |  (%d bytes)%s:%s\n\n", COLOR_GREEN, res, COLOR_RESET, data_buff);
     }
 }
 
 int show_menu() {
     system("clear");
-    printf("\t\t\t\t\t%s%s| MultiFlow Device driver |%s%s\n\n", COLOR_YELLOW, BOLD, COLOR_RESET, RESET);
-    printf(COLOR_YELLOW "------------------------------------------------\n" COLOR_RESET);
-    printf("%sCurrently Opened: %s%s\n", BOLD, RESET, opened_device);
-    printf(COLOR_YELLOW "------------------------------------------------\n" COLOR_RESET);
+    printf(COLOR_YELLOW "      ╔═══════════════════════════════╗\n" COLOR_RESET);
+    printf("      %s║%s MultiFlow Device Driver - CLI ║\n", COLOR_YELLOW, BOLD);
+    printf(COLOR_YELLOW "      ╚═══════════════════════════════╝\n" COLOR_RESET);
+    printf(COLOR_YELLOW "┌───────────────────────────────────────────┐\n" COLOR_RESET);
+    printf("%s│%s%s Currently Opened Device:%s ", COLOR_YELLOW, COLOR_RESET, BOLD, RESET);
+    if (device_fd == -1) {
+        printf(COLOR_RED "%s\n" COLOR_RED, opened_device);
+    } else {
+        printf(COLOR_GREEN "%s\n" COLOR_GREEN, opened_device);
+    }
+    printf(COLOR_YELLOW "├───────────────────────────────────────────┤\n" COLOR_RESET);
 
     for (i = 0; i < menu_size; ++i) {
-        printf(COLOR_MAGENTA);
-        printf("%s\n", menu_list[i]);
-        printf(COLOR_RESET);
+        printf(COLOR_YELLOW "│ ");
+        printf("%s%s%s\n", COLOR_BLUE, menu_list[i], COLOR_RESET);
     }
-    printf("\n\nInsert your command: ");
+    printf(COLOR_YELLOW "├───────────────────────────────────────────┤\n" COLOR_RESET);
+    printf(COLOR_YELLOW "│" COLOR_RESET);
+    printf(BOLD " > Insert your command: " RESET);
     fgets(data_buff, sizeof(data_buff), stdin);
+    printf(COLOR_YELLOW "└───────────────────────────────────────────┘\n\n" COLOR_RESET);
     cmd = atoi(data_buff);
     clear_buffer();
 }
@@ -237,6 +248,8 @@ int delete_nodes() {
     printf(" > %s", data_buff);
     if (device_fd != -1) {
         printf("device %s is opened. Closing.\n", opened_device);
+        sprintf(opened_device, "none");
+        device_fd = -1;
         close(device_fd);
     }
     system(data_buff);
