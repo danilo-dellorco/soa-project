@@ -163,6 +163,7 @@ int write_op() {
     clear_buffer();
     printf("Insert the data you want to write (max 4096): ");
     fgets(data_buff, sizeof(data_buff), stdin);
+    data_buff[strcspn(data_buff, "\n")] = 0;  // ignoring \n
 
     res = write(device_fd, data_buff, min(strlen(data_buff), 4096));
     if (res == 0 || res == -1)

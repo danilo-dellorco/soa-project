@@ -85,6 +85,7 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
     char *block_buff;
 
     int ret;
+    int cls;
 
     // Blocco vuoto per la scrittura successiva. E' il blocco successivo a quello attualmente scritto
     empty_block = kzalloc(sizeof(stream_block), GFP_ATOMIC);
@@ -117,8 +118,8 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
     printk("%s: [head] written %ld bytes, %s\n", MODNAME, strlen(the_object->head->stream_content), the_object->head->stream_content);
     printk("%s: [curr] written %ld bytes, %s\n", MODNAME, strlen(current_block->stream_content), current_block->stream_content);
 
-    // ret = clear_user(buff, len);
-    // printk("%s: write clear_user %d\n", MODNAME, ret);
+    cls = clear_user(&buff, len);
+    printk("%s: clear_user ret %d\n", MODNAME, ret);
 
     return len - ret;
 }
@@ -133,6 +134,7 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
 static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off) {
     int minor = get_minor(filp);
     int ret;
+    int cls;
     int block_residual;
     long block_size;
     int to_read;
@@ -141,12 +143,10 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off) 
     stream_block *current_block;
     stream_block *completed_block;
 
-    // ret = clear_user(buff, len);
-    // printk("%s: read clear_user %d\n", MODNAME, ret);
+    cls = clear_user(&buff, len);
 
     the_object = objects + minor;
     printk("%s: somebody called a read on dev with [major,minor] number [%d,%d]\n", MODNAME, get_major(filp), get_minor(filp));
-    printk("%s: offset: %d\n", MODNAME, the_object->head->read_offset);
 
     // need to lock in any case
     mutex_lock(&(the_object->operation_synchronizer));
@@ -165,7 +165,7 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off) 
     to_read = len;
     bytes_read = 0;
 
-    while (to_read != 0) {
+    while (1) {
         block_size = strlen(current_block->stream_content);
         printk("%s: to_read: %d, block_size: %ld, read_off: %d\n", MODNAME, to_read, block_size, current_block->read_offset);
 
@@ -173,7 +173,7 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off) 
             printk("%s: cross block read", MODNAME);
             block_residual = block_size - current_block->read_offset;
             to_read -= block_residual;
-            ret = copy_to_user(&buff[ret], &(current_block->stream_content[current_block->read_offset]), block_residual);
+            ret = copy_to_user(&buff[bytes_read], &(current_block->stream_content[current_block->read_offset]), block_residual);
             bytes_read += (block_residual - ret);
 
             // Sposto logicamente l'inizio dello stream al blocco successivo.
@@ -190,20 +190,20 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off) 
                 the_object->head = current_block->next;
                 the_object->tail = current_block->next;
                 mutex_unlock(&(the_object->operation_synchronizer));
+                printk("%s: return (1) read %d bytes", MODNAME, bytes_read);
                 return bytes_read;
             }
 
         } else {
             printk("%s: whole block read", MODNAME);
-            ret = copy_to_user(&buff[ret], &(current_block->stream_content[current_block->read_offset]), to_read);
+            ret = copy_to_user(&buff[bytes_read], &(current_block->stream_content[current_block->read_offset]), to_read);
             bytes_read += (to_read - ret);
-            to_read = 0;
-            current_block->read_offset += (len - ret);
+            current_block->read_offset += (to_read - ret);
             mutex_unlock(&(the_object->operation_synchronizer));
+            printk("%s: return (2) read %d bytes", MODNAME, bytes_read);
+            return bytes_read;
         }
     }
-
-    return bytes_read;
 }
 
 /**
