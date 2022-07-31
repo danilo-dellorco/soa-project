@@ -8,7 +8,6 @@
 #include <string.h>
 #include <sys/ioctl.h>
 #include <unistd.h>
-
 #define NUM_DEVICES 3  // TODO set to 128
 
 int i;
@@ -64,6 +63,7 @@ int write_op();
 int read_op();
 int open_device();
 int exit_op();
+int set_enabling(int minor, int status);
 
 int min(int num1, int num2) {
     if (num1 < num2)
@@ -92,6 +92,7 @@ void clear_buffer() {
 }
 
 int main(int argc, char** argv) {
+    int ret;
     if (argc < 3) {
         printf("usage: sudo ./user DEVICE_PATH MAJOR\n");
         return -1;
@@ -135,11 +136,26 @@ int main(int argc, char** argv) {
                 wait_input();
                 break;
             case (8):
-                printf("'enable device file' not implemented yet.\n");
+                int minor_en;
+                printf("Enter the minor number of the device to enable (-1 for currently opened device): ");
+                fgets(data_buff, sizeof(data_buff), stdin);
+                minor_en = atoi(data_buff);
+                if (minor_en == -1) {
+                    if (device_fd == -1) {
+                        printf(COLOR_RED "Open a device first.\n" COLOR_RESET);
+                        wait_input();
+                        break;
+                    }
+                    minor_en = minor;
+                }
+                clear_buffer();
+                set_enabling(minor_en, 1);
+                // ioctl(device_fd, 8, NULL);
                 wait_input();
                 break;
             case (9):
                 printf("'disable device file' not implemented yet.\n");
+                ioctl(device_fd, 9, NULL);
                 wait_input();
                 break;
             case (10):
@@ -187,7 +203,13 @@ int open_device() {
         printf("open error on device %s\n", opened_device);
         sprintf(opened_device, "none");
         device_fd = -1;
-        return (-1);
+        return -1;
+    }
+    if (device_fd == -2) {
+        printf("the device file %s is disabled, and cannot be opened\n", opened_device);
+        sprintf(opened_device, "none");
+        device_fd = -1;
+        return -1;
     }
     printf("device %s successfully opened, fd is: %d\n", opened_device, device_fd);
 }
@@ -280,16 +302,57 @@ int create_nodes() {
 int delete_nodes() {
     int minors;
     clear_buffer();
-    printf("Deleting all minors for device %s\n", device_path);
     sprintf(data_buff, "rm %s*\n", device_path);
-    printf(" > %s", data_buff);
     if (device_fd != -1) {
-        printf("device %s is opened. Closing.\n", opened_device);
         sprintf(opened_device, "none");
         device_fd = -1;
         close(device_fd);
     }
     system(data_buff);
+}
+
+/**
+ * Abilita o disabilita un device file accedendo all'apposito parametro nel VFS
+ */
+int set_enabling(int minor, int status) {
+    char* filename = "/sys/module/test/parameters/device_enabling";
+    FILE* handle = fopen(filename, "w+"); /* open the file for reading and updating */
+
+    if (handle == NULL) return -1; /* if file not found quit */
+    int count = 0;
+    char current_char = 'n';
+    int swap_pos = 0;
+    char* line = NULL;
+    size_t len = 0;
+
+    getline(&line, &len, handle);
+    printf("line: %s", line);
+    char s = status + '0';
+    line[2 * minor] = s;
+    printf("line: %s", line);
+    fputs(line, handle);
+    getline(&line, &len, handle);
+    printf("line: %s", line);
+    // while (current_char != EOF) {
+    //     current_char = fgetc(handle);
+    //     printf("stream pos: %ld | ", ftell(handle));
+    //     printf("current = %c | ", current_char);
+    //     printf("count = %d\n", count);
+
+    //     if (count == minor) {
+    //         printf("count==minor\n");
+    //         fseek(handle, 2, 0);
+    //         fprintf(handle, "%d", status); /* write the new character at the new position */
+    //         swap_pos = count;
+    //     }
+
+    //     if (current_char == ',') {
+    //         count++;
+    //     }
+    // }
+    fclose(handle); /* it's important to close the file_handle
+                       when you're done with it to avoid memory leaks */
+    return 0;
 }
 
 int exit_op() {

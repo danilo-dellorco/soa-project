@@ -43,8 +43,12 @@ static int dev_open(struct inode *inode, struct file *file) {
         return -ENODEV;
     }
 
+    if (device_enabling[minor] == 0) {
+        printk("%s: device with minor %d is disabled, and cannot be opened.\n", MODNAME, minor);
+        return -2;
+    }
+
     printk("%s: device file successfully opened for object with minor %d\n", MODNAME, minor);
-    // device opened by a default nop
     return 0;
 }
 
@@ -234,7 +238,6 @@ static long dev_ioctl(struct file *filp, unsigned int command, unsigned long par
             session->blocking = NON_BLOCKING;
             printk(
                 "%s: somebody has set NON-BLOCKING read & write on [%d,%d] and command %u \n",
-                "[major,minor] number [%d,%d] and command %u \n",
                 MODNAME, get_major(filp), get_minor(filp), command);
             break;
         case 7:
