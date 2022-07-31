@@ -1,8 +1,12 @@
-
 #include "utils/structures.h"
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Danilo Dell'Orco");
+
+// TODO implementare thread/sleep etc
+// TODO implementare doppio flusso
+// TODO gestione corretta di total_bytes, sbarella un pochino
+
 /*
  * Prototipi delle funzioni del driver
  */
@@ -28,8 +32,6 @@ static int Major; /* Major number assigned to broadcast device driver */
  * Definiamo quindi 128 differenti strutture object_state mantenute nell'array objects
  **/
 object_state objects[NUM_DEVICES];
-
-/* the actual driver */
 
 /*
  * Invocata dal VFS quando apriamo il nodo associato al driver. Cerca di prendere il lock su un mutex,
@@ -93,7 +95,7 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
 
     ret = copy_from_user(block_buff, buff, len);
 
-    the_object->total_bytes += (len - ret);
+    total_bytes_high[minor] += (len - ret);
 
     current_block = the_object->tail;
     empty_block->id = current_block->id + 1;
@@ -175,7 +177,7 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off) 
 
             printk("--- free | deallocated block %d memory", old_id);
 
-            the_object->total_bytes -= bytes_read;
+            total_bytes_high[minor] -= bytes_read;
 
             // Siamo nell'ultimo blocco, quindi abbiamo letto tutti i dati dello stream
             if (current_block->stream_content == NULL) {
@@ -193,7 +195,7 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off) 
             ret = copy_to_user(&buff[bytes_read], &(current_block->stream_content[current_block->read_offset]), to_read);
             bytes_read += (to_read - ret);
             current_block->read_offset += (to_read - ret);
-            the_object->total_bytes -= bytes_read;
+            total_bytes_high[minor] -= bytes_read;
             printk("%s: read completed %d bytes", MODNAME, bytes_read);
             mutex_unlock(&(the_object->operation_synchronizer));
             return bytes_read;
@@ -219,45 +221,46 @@ static long dev_ioctl(struct file *filp, unsigned int command, unsigned long par
         case 3:
             session->priority = HIGH_PRIORITY;
             printk(
-                "%s: somebody has set priority level to LOW on [%d,%d] and command %u \n",
-                MODNAME, get_major(filp), get_minor(filp), command);
+                "%s: ioctl(%u) | somebody has set priority level to LOW on [%d,%d]\n",
+                MODNAME, command, get_major(filp), get_minor(filp));
             break;
         case 4:
             session->priority = LOW_PRIORITY;
             printk(
-                "%s: somebody has set priority level to HIGH on [%d,%d] and command %u \n",
-                MODNAME, get_major(filp), get_minor(filp), command);
+                "%s: ioctl(%u) | somebody has set priority level to HIGH on [%d,%d]\n",
+                MODNAME, command, get_major(filp), get_minor(filp));
             break;
         case 5:
             session->blocking = BLOCKING;
             printk(
-                "%s: somebody has set BLOCKING read & write on [%d,%d] and command %u \n",
-                MODNAME, get_major(filp), get_minor(filp), command);
+                "%s: ioctl(%u) | somebody has set BLOCKING read & write on [%d,%d]\n",
+                MODNAME, command, get_major(filp), get_minor(filp));
             break;
         case 6:
             session->blocking = NON_BLOCKING;
             printk(
-                "%s: somebody has set NON-BLOCKING read & write on [%d,%d] and command %u \n",
-                MODNAME, get_major(filp), get_minor(filp), command);
+                "%s: ioctl(%u) | somebody has set NON-BLOCKING read & write on [%d,%d]\n",
+                MODNAME, command, get_major(filp), get_minor(filp));
             break;
         case 7:
             session->timeout = param;
             printk(
-                "%s: somebody has set TIMEOUT on [%d,%d] and command %u \n",
-                MODNAME, get_major(filp), get_minor(filp), command);
+                "%s: ioctl(%u) | somebody has set TIMEOUT on [%d,%d]\n",
+                MODNAME, command, get_major(filp), get_minor(filp));
             break;
-        case 8:
-            device_enabling[get_minor(filp)] = ENABLED;
-            printk(
-                "%s: somebody enabled the device [%d,%d] and command %u \n",
-                MODNAME, get_major(filp), get_minor(filp), command);
-            break;
-        case 9:
-            device_enabling[get_minor(filp)] = DISABLED;
-            printk(
-                "%s: somebody disabled the device [%d,%d] and command %u \n",
-                MODNAME, get_major(filp), get_minor(filp), command);
-            break;
+        // Implementation of enable/disable device using ioctl instead of writing to file
+        // case 8:
+        //     device_enabling[get_minor(filp)] = ENABLED;
+        //     printk(
+        //         "%s: somebody enabled the device [%d,%d] and command %u \n",
+        //         MODNAME, get_major(filp), get_minor(filp), command);
+        //     break;
+        // case 9:
+        //     device_enabling[get_minor(filp)] = DISABLED;
+        //     printk(
+        //         "%s: somebody disabled the device [%d,%d] and command %u \n",
+        //         MODNAME, get_major(filp), get_minor(filp), command);
+        //     break;
         default:
             printk(
                 "%s: somebody called an illegal command on [%d,%d]%u \n",
@@ -295,7 +298,9 @@ int init_module(void) {
         objects[i].head->next = NULL;
         objects[i].head->stream_content = NULL;
         objects[i].head->read_offset = 0;
-        objects[i].total_bytes = 0;
+
+        // Di default tutti i dispositivi sono abilitati
+        device_enabling[i] = ENABLED;
 
         if (objects[i].head == NULL) goto revert_allocation;
     }

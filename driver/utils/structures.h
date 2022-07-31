@@ -49,7 +49,7 @@ module_param_array(waiting_threads_high, ulong, NULL, 0440);
 MODULE_PARM_DESC(waiting_threads_high, "Number of threads waiting for data on the high priority flow.");
 
 /**
- * Blocco dati relativo allo stream
+ * Singolo blocco dati relativo allo stream
  */
 typedef struct _stream_block {
     int read_offset;             // Mantiene l'offset di lettura del blocco corrente
@@ -63,11 +63,13 @@ typedef struct _stream_block {
  */
 typedef struct _object_state {
     struct mutex operation_synchronizer;  // Lock sullo specifico device, per sincronizzare l'accesso di thread concorrenti
-    int total_bytes;                      // Totale di bytes non letti presenti in tutti i blocchi dello stream
     stream_block *head;                   // Puntatore al primo blocco dati dello stream
     stream_block *tail;                   // Puntatore all' ultimo blocco dati dello stream. Permette di appendere più velocemente uno stream block
 } object_state;
 
+/**
+ * Mantiene lo stato della sessione
+ */
 typedef struct _session_state {
     int blocking;  // Operazioni bloccanti o non-bloccanti
     int priority;  // Livello di priorità della sessione [0,1] = [low,high]

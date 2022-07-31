@@ -1,14 +1,4 @@
-#include <errno.h>
-#include <fcntl.h>
-#include <pthread.h>
-#include <stdbool.h>
-#include <stdint.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <sys/ioctl.h>
-#include <unistd.h>
-#define NUM_DEVICES 3  // TODO set to 128
+#include "utils.h"
 
 int i;
 char data_buff[4096];
@@ -18,20 +8,10 @@ int minor;
 int major;
 char* device_path;
 char opened_device[64] = "none";
-#define DATA "driver test\n"
-#define SIZE strlen(DATA)
 
-#define COLOR_RED "\x1b[31m"
-#define COLOR_GREEN "\x1b[32m"
-#define COLOR_YELLOW "\x1b[33m"
-#define COLOR_BLUE "\x1b[34m"
-#define COLOR_MAGENTA "\x1b[35m"
-#define COLOR_CYAN "\x1b[36m"
-#define COLOR_RESET "\x1b[0m"
-
-#define RESET "\x1B[0m"
-#define BOLD "\x1B[1m"
-
+/**
+ * Lista di comandi utilizzabili
+ */
 char* main_menu_list[] = {
     "--------- OPERATIONS ---------",
     "0)  Open a device file",
@@ -56,6 +36,9 @@ char* main_menu_list[] = {
 };
 int menu_size = sizeof(main_menu_list) / sizeof(char*);
 
+/**
+ * Prototipi
+ */
 int show_menu();
 int create_nodes();
 int delete_nodes();
@@ -63,30 +46,12 @@ int write_op();
 int read_op();
 int open_device();
 int exit_op();
-int set_enabling(int minor, int status);
+int set_device_enabling(int status);
+int show_device_status();
 
-int min(int num1, int num2) {
-    if (num1 < num2)
-        return num1;
-    return num2;
-}
-
-void myflush(FILE* in) {
-    int ch;
-    do
-        ch = fgetc(in);
-    while (ch != EOF && ch != '\n');
-    clearerr(in);
-}
-
-void wait_input(void) {
-    // myflush(stdin);
-    printf("───────────────────────────────────────────────────────────\n");
-    printf("Press %s[Enter]%s to continue...", BOLD, RESET);
-    fflush(stdout);
-    getchar();
-}
-
+/**
+ * Resetta a 0 i bytes del buffer utilizzato nelle varie operazioni
+ */
 void clear_buffer() {
     memset(data_buff, 0, 4096);
 }
@@ -136,30 +101,15 @@ int main(int argc, char** argv) {
                 wait_input();
                 break;
             case (8):
-                int minor_en;
-                printf("Enter the minor number of the device to enable (-1 for currently opened device): ");
-                fgets(data_buff, sizeof(data_buff), stdin);
-                minor_en = atoi(data_buff);
-                if (minor_en == -1) {
-                    if (device_fd == -1) {
-                        printf(COLOR_RED "Open a device first.\n" COLOR_RESET);
-                        wait_input();
-                        break;
-                    }
-                    minor_en = minor;
-                }
-                clear_buffer();
-                set_enabling(minor_en, 1);
-                // ioctl(device_fd, 8, NULL);
+                set_device_enabling(1);
                 wait_input();
                 break;
             case (9):
-                printf("'disable device file' not implemented yet.\n");
-                ioctl(device_fd, 9, NULL);
+                set_device_enabling(0);
                 wait_input();
                 break;
             case (10):
-                printf("'see device status' not implemented yet.\n");
+                show_device_status();
                 wait_input();
                 break;
             case (11):
@@ -174,12 +124,13 @@ int main(int argc, char** argv) {
                 wait_input();
                 break;
         }
-
-        // pause();
     }
     return 0;
 }
 
+/**
+ * Apre una sessione verso un device file
+ */
 int open_device() {
     printf("Insert Minor Number of the device driver to open: ");
     fgets(data_buff, sizeof(data_buff), stdin);
@@ -214,9 +165,12 @@ int open_device() {
     printf("device %s successfully opened, fd is: %d\n", opened_device, device_fd);
 }
 
+/**
+ * Scrive i dati specificati da stdin nel device attualmente aperto
+ */
 int write_op() {
     if (device_fd < 0) {
-        printf(COLOR_RED "Open a device first.\n" COLOR_RESET);
+        printf(COLOR_RED "No device actually opened. Open a device first..\n" COLOR_RESET);
         return -1;
     }
 
@@ -235,9 +189,12 @@ int write_op() {
     }
 }
 
+/**
+ * Legge la quantità di byte desiderata dal device attualmente aperto
+ */
 int read_op() {
     if (device_fd < 0) {
-        printf(COLOR_RED "Open a device first.\n" COLOR_RESET);
+        printf(COLOR_RED "No device actually opened. Open a device first..\n" COLOR_RESET);
         return -1;
     }
 
@@ -261,6 +218,9 @@ int read_op() {
     }
 }
 
+/**
+ * Mostra il menu con i possibili comandi utente
+ */
 int show_menu() {
     system("clear");
     printf(COLOR_YELLOW "      ╔═══════════════════════════════╗\n" COLOR_RESET);
@@ -288,6 +248,9 @@ int show_menu() {
     clear_buffer();
 }
 
+/**
+ * Crea 128 nodi con minor 0-127 in /dev
+ */
 int create_nodes() {
     printf("Creating %d minors for device %s with major %d\n", NUM_DEVICES, device_path, major);
 
@@ -299,6 +262,9 @@ int create_nodes() {
     }
 }
 
+/**
+ * Elimina tutti i nodi test-dev attualmente presenti in /dev
+ */
 int delete_nodes() {
     int minors;
     clear_buffer();
@@ -314,47 +280,97 @@ int delete_nodes() {
 /**
  * Abilita o disabilita un device file accedendo all'apposito parametro nel VFS
  */
-int set_enabling(int minor, int status) {
+int set_device_enabling(int status) {
     char* filename = "/sys/module/test/parameters/device_enabling";
-    FILE* handle = fopen(filename, "w+"); /* open the file for reading and updating */
-
-    if (handle == NULL) return -1; /* if file not found quit */
     int count = 0;
     char current_char = 'n';
     int swap_pos = 0;
     char* line = NULL;
     size_t len = 0;
+    int minor_cmd;
+
+    // Open del file relativo al module_param_array 'device_enabling'
+    FILE* handle = fopen(filename, "w+");
+    if (handle == NULL) {
+        return -1;
+    }
+
+    char* op = "enable";
+
+    if (status == 0) {
+        op = "disable";
+    }
+
+    printf("Enter the minor number of the device to %s (-1 for currently opened device): ", op);
+    fgets(data_buff, sizeof(data_buff), stdin);
+    minor_cmd = atoi(data_buff);
+    if (minor_cmd == -1) {
+        if (device_fd == -1) {
+            printf(COLOR_RED "No device actually opened. Open a device first..\n" COLOR_RESET);
+            return -1;
+        }
+        if (device_fd < -1 || device_fd > 127) {
+            printf(COLOR_RED "Insert a valid minor 0-127\n" COLOR_RESET);
+        }
+        minor_cmd = minor;
+    }
+    clear_buffer();
 
     getline(&line, &len, handle);
-    printf("line: %s", line);
     char s = status + '0';
-    line[2 * minor] = s;
-    printf("line: %s", line);
+    line[2 * minor_cmd] = s;
     fputs(line, handle);
-    getline(&line, &len, handle);
-    printf("line: %s", line);
-    // while (current_char != EOF) {
-    //     current_char = fgetc(handle);
-    //     printf("stream pos: %ld | ", ftell(handle));
-    //     printf("current = %c | ", current_char);
-    //     printf("count = %d\n", count);
-
-    //     if (count == minor) {
-    //         printf("count==minor\n");
-    //         fseek(handle, 2, 0);
-    //         fprintf(handle, "%d", status); /* write the new character at the new position */
-    //         swap_pos = count;
-    //     }
-
-    //     if (current_char == ',') {
-    //         count++;
-    //     }
-    // }
-    fclose(handle); /* it's important to close the file_handle
-                       when you're done with it to avoid memory leaks */
+    fclose(handle);
     return 0;
 }
 
+/**
+ * Mostra lo stato attuale di un device file accedendo a tutti i parametri esposti nel VFS
+ */
+int show_device_status() {
+    int minor_cmd;
+
+    printf("Enter the minor number of the device (-1 for currently opened device): ");
+    fgets(data_buff, sizeof(data_buff), stdin);
+    minor_cmd = atoi(data_buff);
+    if (minor_cmd == -1) {
+        if (device_fd == -1) {
+            printf(COLOR_RED "No device actually opened. Open a device first..\n" COLOR_RESET);
+            return -1;
+        }
+        if (device_fd < -1 || device_fd > 127) {
+            printf(COLOR_RED "Insert a valid minor 0-127\n" COLOR_RESET);
+        }
+        minor_cmd = minor;
+    }
+    clear_buffer();
+
+    printf("┌───────────────────────────────────┐\n");
+    printf("│%s   Device /dev/test-dev%d Status %s\n", BOLD, minor_cmd, RESET);
+    printf("├───────────────────────────────────┤\n");
+    char* enabling = "/sys/module/test/parameters/device_enabling";
+    char* high_b = "/sys/module/test/parameters/total_bytes_high";
+    char* low_b = "/sys/module/test/parameters/total_bytes_low";
+    char* high_t = "/sys/module/test/parameters/waiting_threads_high";
+    char* low_t = "/sys/module/test/parameters/waiting_threads_low";
+
+    char* op = "ENABLED";
+    if (read_param_field(enabling, minor_cmd) == 0) {
+        op = "DISABLED";
+    }
+
+    printf("│ %sOperativity:%s %s\n", BOLD, RESET, op);
+    printf("│ %sHigh Priority Bytes:%s %d\n", BOLD, RESET, read_param_field(high_b, minor_cmd));
+    printf("│ %sLow Priority Bytes:%s %d\n", BOLD, RESET, read_param_field(low_b, minor_cmd));
+    printf("│ %sLow Priority Waiting Threads:%s %d\n", BOLD, RESET, read_param_field(high_t, minor_cmd));
+    printf("│ %sHigh Priority Waiting Threads:%s %d\n", BOLD, RESET, read_param_field(low_t, minor_cmd));
+
+    printf("└───────────────────────────────────┘\n");
+}
+
+/**
+ * Chiude il programma liberando tutte le risorse
+ */
 int exit_op() {
     // TODO aggiungere sblocco mutex rilascio risorse e quant'altro
     printf(COLOR_CYAN "Goodbye.\n" COLOR_RESET);
