@@ -66,6 +66,9 @@ void wait_input(void) {
 #include <stdlib.h>
 #include <string.h>
 
+/**
+ * Funzione ausiliaria di read_param_field
+ */
 const char* getfield(char* line, int num) {
     const char* tok;
     for (tok = strtok(line, ",");
@@ -77,6 +80,10 @@ const char* getfield(char* line, int num) {
     return NULL;
 }
 
+/**
+ * Legge un campo indicizzato da 'minor' all'interno di un file csv. Utilizzato per leggere il parametro
+ * di un device (identificato tramite minor) dall'apposito file di parametri esposto nel VFS
+ */
 int read_param_field(char* file, int minor) {
     int ret;
     FILE* stream = fopen(file, "r");
@@ -87,4 +94,32 @@ int read_param_field(char* file, int minor) {
     ret = atoi(getfield(tmp, minor + 1));
     free(tmp);
     return ret;
+}
+
+/**
+ * Ottiene il major number del file attualmente aperto
+ */
+int get_open_major(char* opened_device) {
+    char buff[4096];
+    char* line;
+    size_t len = 0;
+
+    sprintf(buff,
+            "ls -l %s | cut -d ' ' -f 5 | sed 's/.$//' > opened_major",
+            opened_device);
+
+    system(buff);
+
+    FILE* ptr;
+    char ch;
+    ptr = fopen("opened_major", "r");
+
+    if (NULL == ptr) {
+        printf("file can't be opened \n");
+    }
+
+    getline(&line, &len, ptr);
+    fclose(ptr);
+
+    return atoi(line);
 }

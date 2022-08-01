@@ -8,6 +8,7 @@ int minor;
 int major;
 char* device_path;
 char opened_device[64] = "none";
+int opened_major = 0;
 
 /**
  * Lista di comandi utilizzabili
@@ -163,6 +164,15 @@ int open_device() {
         return -1;
     }
     printf("device %s successfully opened, fd is: %d\n", opened_device, device_fd);
+
+    opened_major = get_open_major(opened_device);
+
+    if (opened_major != major) {
+        printf("%s%s\nWarning: currently open device has a different major than the one used by CLI.%s\n", COLOR_YELLOW, BOLD, COLOR_RESET);
+        printf("%sTry using command (11) to re-create the device using the current driver.%s\n", COLOR_YELLOW, COLOR_RESET);
+    }
+
+    return 0;
 }
 
 /**
@@ -309,10 +319,11 @@ int set_device_enabling(int status) {
             printf(COLOR_RED "No device actually opened. Open a device first..\n" COLOR_RESET);
             return -1;
         }
-        if (device_fd < -1 || device_fd > 127) {
-            printf(COLOR_RED "Insert a valid minor 0-127\n" COLOR_RESET);
-        }
         minor_cmd = minor;
+    }
+    if (minor_cmd < -1 || minor_cmd > NUM_DEVICES - 1) {
+        printf(COLOR_RED "Insert a valid minor 0-127\n" COLOR_RESET);
+        return -1;
     }
     clear_buffer();
 
@@ -333,17 +344,18 @@ int show_device_status() {
     printf("Enter the minor number of the device (-1 for currently opened device): ");
     fgets(data_buff, sizeof(data_buff), stdin);
     minor_cmd = atoi(data_buff);
+    clear_buffer();
     if (minor_cmd == -1) {
         if (device_fd == -1) {
             printf(COLOR_RED "No device actually opened. Open a device first..\n" COLOR_RESET);
             return -1;
         }
-        if (device_fd < -1 || device_fd > 127) {
-            printf(COLOR_RED "Insert a valid minor 0-127\n" COLOR_RESET);
-        }
         minor_cmd = minor;
     }
-    clear_buffer();
+    if (minor_cmd < -1 || minor_cmd > NUM_DEVICES - 1) {
+        printf(COLOR_RED "Insert a valid minor 0-127\n" COLOR_RESET);
+        return -1;
+    }
 
     printf("┌───────────────────────────────────┐\n");
     printf("│%s   Device /dev/test-dev%d Status %s\n", BOLD, minor_cmd, RESET);

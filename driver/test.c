@@ -152,7 +152,7 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off) 
 
     while (1) {
         block_size = strlen(current_block->stream_content);
-        // printk("%s: to_read: %d, block_size: %ld, read_off: %d\n", MODNAME, to_read, block_size, current_block->read_offset);
+        printk("%s: to_read: %d, block_size: %ld, read_off: %d, bytes_read: %d\n", MODNAME, to_read, block_size, current_block->read_offset, bytes_read);
 
         // Richiesta la lettura di più byte rispetto a quelli da leggere nel blocco corrente
         if (block_size - current_block->read_offset < to_read) {
@@ -177,13 +177,12 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off) 
 
             printk("--- free | deallocated block %d memory", old_id);
 
-            total_bytes_high[minor] -= bytes_read;
-
             // Siamo nell'ultimo blocco, quindi abbiamo letto tutti i dati dello stream
             if (current_block->stream_content == NULL) {
+                total_bytes_high[minor] -= bytes_read;
+                printk("%s: read completed (1), read %d bytes\n", MODNAME, bytes_read);
                 the_object->head = current_block;
                 the_object->tail = current_block;
-                printk("%s: stream completed, read %d bytes", MODNAME, bytes_read);
                 mutex_unlock(&(the_object->operation_synchronizer));
                 return bytes_read;
             }
@@ -196,7 +195,7 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off) 
             bytes_read += (to_read - ret);
             current_block->read_offset += (to_read - ret);
             total_bytes_high[minor] -= bytes_read;
-            printk("%s: read completed %d bytes", MODNAME, bytes_read);
+            printk("%s: read completed (2), read %d bytes\n", MODNAME, bytes_read);
             mutex_unlock(&(the_object->operation_synchronizer));
             return bytes_read;
         }
