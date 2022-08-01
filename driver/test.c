@@ -10,7 +10,6 @@ MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Danilo Dell'Orco");
 
 // TODO implementare doppio flusso
-// TODO controllo opened device major in dev_open
 
 /*
  * Prototipi delle funzioni del driver

@@ -116,13 +116,7 @@ int open_device() {
     printf("opening device %s\n", opened_device);
     device_fd = open(opened_device, O_RDWR);
     if (device_fd == -1) {
-        printf("open error on device %s\n", opened_device);
-        sprintf(opened_device, "none");
-        device_fd = -1;
-        return -1;
-    }
-    if (device_fd == -2) {
-        printf("the device file %s is disabled, and cannot be opened\n", opened_device);
+        printf("open error on device, use 'dmesg' for details. %s\n", opened_device);
         sprintf(opened_device, "none");
         device_fd = -1;
         return -1;
@@ -131,11 +125,10 @@ int open_device() {
     printf("%sdevice %s successfully opened, fd is: %d%s\n", COLOR_GREEN, opened_device, device_fd, RESET);
 
     opened_major = get_open_major(opened_device);
-    printf("opened: %d\n", opened_major);
 
     if (opened_major != major) {
-        printf("%s%s\nWarning: currently open device has a different major than the one used by CLI.%s\n", COLOR_YELLOW, BOLD, RESET);
-        printf("%sTry using command (11) to re-create the device using the current driver.%s\n", COLOR_YELLOW, RESET);
+        printf("%s%s\nWarning: currently open device has major '%d' than '%d' used by the CLI.%s\n", COLOR_YELLOW, BOLD, opened_major, major, RESET);
+        printf("%sTry using command (11) to re-create the device node using the current driver.%s\n", COLOR_YELLOW, RESET);
     }
 
     return 0;
@@ -207,7 +200,7 @@ int show_menu() {
     if (device_fd == -1) {
         printf(COLOR_RED "%s\n" COLOR_RED, opened_device);
     } else {
-        printf(COLOR_GREEN "%s\n" COLOR_GREEN, opened_device);
+        printf(COLOR_GREEN "%s\n" RESET, opened_device);
     }
     printf(COLOR_YELLOW "├───────────────────────────────────────────┤\n" RESET);
 
@@ -236,6 +229,8 @@ int create_nodes() {
         system(data_buff);
         sprintf(data_buff, "%s%d", device_path, i);
     }
+    printf(COLOR_GREEN "Device files succesfully created.\n" RESET);
+    return 0;
 }
 
 /**
