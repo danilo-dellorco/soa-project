@@ -12,6 +12,29 @@
 #define NUM_DEVICES 3  // TODO set to 128
 
 /**
+ * Lista di comandi utilizzabili
+ */
+char* main_menu_list[] = {
+    "--------- OPERATIONS ---------",
+    "0)  Open a device file",
+    "1)  Write on the device file",
+    "2)  Read from the device file",
+    "------ SESSION SETTINGS ------",
+    "3)  Switch to LOW priority",
+    "4)  Switch to HIGH priority",
+    "5)  Use BLOCKING operations",
+    "6)  Use NON-BLOCKING operations",
+    "7)  Set timeout",
+    "------ DEVICE MANAGEMENT ------",
+    "8)  Enable a device file",
+    "9)  Disable a device file",
+    "10) See device status",
+    "11) Create device nodes",
+    "-------------------------------",
+    "-1) Exit",
+};
+
+/**
  *  Codici di formattazione su terminale
  */
 #define COLOR_RED "\x1b[31m"
@@ -20,7 +43,6 @@
 #define COLOR_BLUE "\x1b[34m"
 #define COLOR_MAGENTA "\x1b[35m"
 #define COLOR_CYAN "\x1b[36m"
-#define COLOR_RESET "\x1b[0m"
 
 #define RESET "\x1B[0m"
 #define BOLD "\x1B[1m"
@@ -120,6 +142,7 @@ int get_open_major(char* opened_device) {
 
     getline(&line, &len, ptr);
     fclose(ptr);
+    system("rm opened_major 1>/dev/null");
 
     return atoi(line);
 }

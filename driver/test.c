@@ -1,11 +1,16 @@
-#include "utils/structures.h"
+#include <linux/delay.h>
+
+#include "utils/params.h"
+#include "utils/structs.h"
+#include "utils/tools.h"
+
+#define TEST
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Danilo Dell'Orco");
 
-// TODO implementare thread/sleep etc
 // TODO implementare doppio flusso
-// TODO gestione corretta di total_bytes, sbarella un pochino
+// TODO controllo opened device major in dev_open
 
 /*
  * Prototipi delle funzioni del driver
@@ -14,18 +19,8 @@ static int dev_open(struct inode *, struct file *);
 static int dev_release(struct inode *, struct file *);
 static ssize_t dev_write(struct file *, const char *, size_t, loff_t *);
 
-static int Major; /* Major number assigned to broadcast device driver */
-
-/**
- * Definisco le macro per ottenere MAJOR e MINOR number dalla sessione corrente, in base alla versione del kernel utilizzata
- */
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 0, 0)
-#define get_major(session) MAJOR(session->f_inode->i_rdev)
-#define get_minor(session) MINOR(session->f_inode->i_rdev)
-#else
-#define get_major(session) MAJOR(session->f_dentry->d_inode->i_rdev)
-#define get_minor(session) MINOR(session->f_dentry->d_inode->i_rdev)
-#endif
+static int Major;
+static int Minor;
 
 /**
  * Dobbiamo gestire 128 dispositivi di I/O, quindi 128 minor numbers differenti.
@@ -34,23 +29,35 @@ static int Major; /* Major number assigned to broadcast device driver */
 object_state objects[NUM_DEVICES];
 
 /*
- * Invocata dal VFS quando apriamo il nodo associato al driver. Cerca di prendere il lock su un mutex,
- * quindi si può avere una sola sessione per volta verso l'oggetto.
+ * Invocata dal VFS quando apriamo il nodo associato al driver.
  */
 static int dev_open(struct inode *inode, struct file *file) {
-    int minor;
-    minor = get_minor(file);
+    session_state *session;
 
-    if (minor >= NUM_DEVICES) {
+    Minor = get_minor(file);
+
+    if (Minor >= NUM_DEVICES) {
         return -ENODEV;
     }
 
-    if (device_enabling[minor] == 0) {
-        printk("%s: device with minor %d is disabled, and cannot be opened.\n", MODNAME, minor);
+    if (device_enabling[Minor] == 0) {
+        printk("%s: device with minor %d is disabled, and cannot be opened.\n", MODNAME, Minor);
         return -2;
     }
 
-    printk("%s: device file successfully opened for object with minor %d\n", MODNAME, minor);
+    session = kzalloc(sizeof(session_state), GFP_ATOMIC);
+    if (session == NULL) {
+        printk("%s: kzalloc error, unable to allocate session\n", MODNAME);
+        return -ENOMEM;
+    }
+
+    // Parametri di default per la nuova sessione
+    session->priority = HIGH_PRIORITY;
+    session->blocking = NON_BLOCKING;
+    session->timeout = 0;
+    file->private_data = session;
+
+    printk("%s: device file successfully opened for object with Minor %d\n", MODNAME, Minor);
     return 0;
 }
 
@@ -58,9 +65,10 @@ static int dev_open(struct inode *inode, struct file *file) {
  * Invocata dal VFS quando si chiude il file, quindi la open è già stata effettuata correttamente
  */
 static int dev_release(struct inode *inode, struct file *file) {
-    int minor;
-    minor = get_minor(file);
-    printk("%s: device file closed\n", MODNAME);
+    session_state *session = file->private_data;
+    kfree(session);
+
+    printk("%s: device file %d closed\n", MODNAME, Minor);
     return 0;
 }
 
@@ -73,11 +81,11 @@ static int dev_release(struct inode *inode, struct file *file) {
  */
 static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t *off) {
     object_state *the_object;
-    int minor = get_minor(filp);
+    session_state *session = filp->private_data;
     stream_block *current_block;
     stream_block *empty_block;
-    char *block_buff;
 
+    char *block_buff;
     int ret;
 
     // Blocco vuoto per la scrittura successiva. E' il blocco successivo a quello attualmente scritto
@@ -87,15 +95,17 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
     empty_block->next = NULL;
     empty_block->stream_content = NULL;
 
-    the_object = objects + minor;
-    printk("%s: somebody called a write of %ld bytes on dev [%d,%d]\n", MODNAME, len, get_major(filp), get_minor(filp));
+    the_object = objects + Minor;
+    printk("%s: somebody called a write of %ld bytes on dev [%d,%d]\n", MODNAME, len, Major, Minor);
 
-    // need to lock in any case
-    mutex_lock(&(the_object->operation_synchronizer));
+    ret = try_mutex_lock(the_object, session, Minor);
+    if (ret < 0) {
+        return -EAGAIN;
+    }
 
     ret = copy_from_user(block_buff, buff, len);
 
-    total_bytes_high[minor] += (len - ret);
+    total_bytes_high[Minor] += (len - ret);
 
     current_block = the_object->tail;
     empty_block->id = current_block->id + 1;
@@ -104,10 +114,14 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
     current_block->next = empty_block;
     the_object->tail = empty_block;
 
+#ifdef TEST
+    printk("%s: [TEST] waiting %d msec to release write lock\n", MODNAME, TEST_TIME);
+    msleep(30000);
+#endif
     mutex_unlock(&(the_object->operation_synchronizer));
-
+    wake_up(&the_object->wait_queue);
+    printk("%s: lock released\n", MODNAME);
     printk("%s: written %ld bytes in block %d: '%s'\n", MODNAME, strlen(current_block->stream_content), current_block->id, current_block->stream_content);
-    // printk("%s: allocated space for new tail in block %d\n", MODNAME, the_object->tail->id);
     return len - ret;
 }
 
@@ -119,7 +133,6 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
  * @param off offset all'area di memoria filp su cui lavoriamo.
  */
 static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off) {
-    int minor = get_minor(filp);
     int ret;
     int cls;
     int block_residual;
@@ -130,13 +143,18 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off) 
     object_state *the_object;
     stream_block *current_block;
     stream_block *completed_block;
+    session_state *session = filp->private_data;
 
     cls = clear_user(buff, len);
 
-    the_object = objects + minor;
-    printk("%s: somebody called a read of %ld bytes on dev [%d,%d]\n", MODNAME, len, get_major(filp), get_minor(filp));
+    the_object = objects + Minor;
+    printk("%s: somebody called a read of %ld bytes on dev [%d,%d]\n", MODNAME, len, Major, Minor);
 
-    mutex_lock(&(the_object->operation_synchronizer));
+    ret = try_mutex_lock(the_object, session, Minor);
+    if (ret < 0) {
+        return -EAGAIN;
+    }
+
     current_block = the_object->head;
     printk("%s: start reading from head - block%d \n", MODNAME, current_block->id);
 
@@ -144,6 +162,7 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off) 
     if (current_block->stream_content == NULL) {
         printk("%s: No data to read in current block\n", MODNAME);
         mutex_unlock(&(the_object->operation_synchronizer));
+        wake_up(&the_object->wait_queue);
         return 0;
     }
 
@@ -179,11 +198,12 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off) 
 
             // Siamo nell'ultimo blocco, quindi abbiamo letto tutti i dati dello stream
             if (current_block->stream_content == NULL) {
-                total_bytes_high[minor] -= bytes_read;
+                total_bytes_high[Minor] -= bytes_read;
                 printk("%s: read completed (1), read %d bytes\n", MODNAME, bytes_read);
                 the_object->head = current_block;
                 the_object->tail = current_block;
                 mutex_unlock(&(the_object->operation_synchronizer));
+                wake_up(&the_object->wait_queue);
                 return bytes_read;
             }
         }
@@ -194,9 +214,10 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off) 
             ret = copy_to_user(&buff[bytes_read], &(current_block->stream_content[current_block->read_offset]), to_read);
             bytes_read += (to_read - ret);
             current_block->read_offset += (to_read - ret);
-            total_bytes_high[minor] -= bytes_read;
+            total_bytes_high[Minor] -= bytes_read;
             printk("%s: read completed (2), read %d bytes\n", MODNAME, bytes_read);
             mutex_unlock(&(the_object->operation_synchronizer));
+            wake_up(&the_object->wait_queue);
             return bytes_read;
         }
     }
@@ -207,7 +228,7 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off) 
  * 3)  Switch to HIGH priority
  * 4)  Switch to LOW priority
  * 5)  Use BLOCKING operations
- * 6)  Use NON-BLOCKING operations
+ * 6)  Use NON-BLOCKING
  * 7)  Set timeout
  * 8)  Enable a device file
  * 9)  Disable a device file
@@ -221,49 +242,49 @@ static long dev_ioctl(struct file *filp, unsigned int command, unsigned long par
             session->priority = HIGH_PRIORITY;
             printk(
                 "%s: ioctl(%u) | somebody has set priority level to LOW on [%d,%d]\n",
-                MODNAME, command, get_major(filp), get_minor(filp));
+                MODNAME, command, Major, Minor);
             break;
         case 4:
             session->priority = LOW_PRIORITY;
             printk(
                 "%s: ioctl(%u) | somebody has set priority level to HIGH on [%d,%d]\n",
-                MODNAME, command, get_major(filp), get_minor(filp));
+                MODNAME, command, Major, Minor);
             break;
         case 5:
             session->blocking = BLOCKING;
             printk(
                 "%s: ioctl(%u) | somebody has set BLOCKING read & write on [%d,%d]\n",
-                MODNAME, command, get_major(filp), get_minor(filp));
+                MODNAME, command, Major, Minor);
             break;
         case 6:
             session->blocking = NON_BLOCKING;
             printk(
                 "%s: ioctl(%u) | somebody has set NON-BLOCKING read & write on [%d,%d]\n",
-                MODNAME, command, get_major(filp), get_minor(filp));
+                MODNAME, command, Major, Minor);
             break;
         case 7:
             session->timeout = param;
             printk(
                 "%s: ioctl(%u) | somebody has set TIMEOUT on [%d,%d]\n",
-                MODNAME, command, get_major(filp), get_minor(filp));
+                MODNAME, command, Major, Minor);
             break;
         // Implementation of enable/disable device using ioctl instead of writing to file
         // case 8:
-        //     device_enabling[get_minor(filp)] = ENABLED;
+        //     device_enabling[Minor] = ENABLED;
         //     printk(
         //         "%s: somebody enabled the device [%d,%d] and command %u \n",
-        //         MODNAME, get_major(filp), get_minor(filp), command);
+        //         MODNAME, Major, Minor, command);
         //     break;
         // case 9:
-        //     device_enabling[get_minor(filp)] = DISABLED;
+        //     device_enabling[Minor] = DISABLED;
         //     printk(
         //         "%s: somebody disabled the device [%d,%d] and command %u \n",
-        //         MODNAME, get_major(filp), get_minor(filp), command);
+        //         MODNAME, Major, Minor, command);
         //     break;
         default:
             printk(
                 "%s: somebody called an illegal command on [%d,%d]%u \n",
-                MODNAME, get_major(filp), get_minor(filp), command);
+                MODNAME, Major, Minor, command);
     }
     return 0;
 }
@@ -300,6 +321,8 @@ int init_module(void) {
 
         // Di default tutti i dispositivi sono abilitati
         device_enabling[i] = ENABLED;
+
+        init_waitqueue_head(&objects[i].wait_queue);
 
         if (objects[i].head == NULL) goto revert_allocation;
     }

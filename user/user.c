@@ -1,40 +1,15 @@
 #include "utils.h"
 
 int i;
-char data_buff[4096];
 int cmd;
-int device_fd = -1;
+char data_buff[4096];
 int minor;
 int major;
 char* device_path;
 char opened_device[64] = "none";
 int opened_major = 0;
+int device_fd = -1;
 
-/**
- * Lista di comandi utilizzabili
- */
-char* main_menu_list[] = {
-    "--------- OPERATIONS ---------",
-    "0)  Open a device file",
-    "1)  Write on the device file",
-    "2)  Read from the device file",
-    "",
-    "------ SESSION SETTINGS ------",
-    "3)  Switch to HIGH priority",
-    "4)  Switch to LOW priority",
-    "5)  Use BLOCKING operations",
-    "6)  Use NON-BLOCKING operations",
-    "7)  Set timeout",
-    "",
-    "------ DEVICE MANAGEMENT ------",
-    "8)  Enable a device file",
-    "9)  Disable a device file",
-    "10) See device status",
-    "11) Create device nodes",
-    "",
-    "-------------------------------",
-    "-1) Exit",
-};
 int menu_size = sizeof(main_menu_list) / sizeof(char*);
 
 /**
@@ -49,6 +24,7 @@ int open_device();
 int exit_op();
 int set_device_enabling(int status);
 int show_device_status();
+int setup_session(int cmd);
 
 /**
  * Resetta a 0 i bytes del buffer utilizzato nelle varie operazioni
@@ -82,23 +58,11 @@ int main(int argc, char** argv) {
                 wait_input();
                 break;
             case (3):
-                printf("'switch to high priority' not implemented yet.\n");
-                wait_input();
-                break;
             case (4):
-                printf("'switch to low priority' not implemented yet.\n");
-                wait_input();
-                break;
             case (5):
-                printf("'use blocking operations' not implemented yet.\n");
-                wait_input();
-                break;
             case (6):
-                printf("'use non-blocking operations' not implemented yet.\n");
-                wait_input();
-                break;
             case (7):
-                printf("'set timeout' not implemented yet.\n");
+                setup_session(cmd);
                 wait_input();
                 break;
             case (8):
@@ -121,7 +85,7 @@ int main(int argc, char** argv) {
                 exit_op();
                 break;
             default:
-                printf(COLOR_RED "Insert a valid command from the list\n" COLOR_RESET);
+                printf(COLOR_RED "Insert a valid command from the list\n" RESET);
                 wait_input();
                 break;
         }
@@ -163,13 +127,15 @@ int open_device() {
         device_fd = -1;
         return -1;
     }
-    printf("device %s successfully opened, fd is: %d\n", opened_device, device_fd);
+
+    printf("%sdevice %s successfully opened, fd is: %d%s\n", COLOR_GREEN, opened_device, device_fd, RESET);
 
     opened_major = get_open_major(opened_device);
+    printf("opened: %d\n", opened_major);
 
     if (opened_major != major) {
-        printf("%s%s\nWarning: currently open device has a different major than the one used by CLI.%s\n", COLOR_YELLOW, BOLD, COLOR_RESET);
-        printf("%sTry using command (11) to re-create the device using the current driver.%s\n", COLOR_YELLOW, COLOR_RESET);
+        printf("%s%s\nWarning: currently open device has a different major than the one used by CLI.%s\n", COLOR_YELLOW, BOLD, RESET);
+        printf("%sTry using command (11) to re-create the device using the current driver.%s\n", COLOR_YELLOW, RESET);
     }
 
     return 0;
@@ -180,7 +146,7 @@ int open_device() {
  */
 int write_op() {
     if (device_fd < 0) {
-        printf(COLOR_RED "No device actually opened. Open a device first..\n" COLOR_RESET);
+        printf(COLOR_RED "No device actually opened. Open a device first.\n" RESET);
         return -1;
     }
 
@@ -191,11 +157,10 @@ int write_op() {
     data_buff[strcspn(data_buff, "\n")] = 0;  // ignoring \n
 
     res = write(device_fd, data_buff, min(strlen(data_buff), 4096));
-    if (res == 0 || res == -1)
-        printf(COLOR_RED "\nWrite result: could not write in the buffer \n" COLOR_RESET);
-    else {
-        printf(COLOR_GREEN "\nWrite result (%d bytes): operation completed successfully\n", res);
-        printf(COLOR_RESET);
+    if (res <= 0) {
+        printf(COLOR_RED "\nWrite result: could not write in the buffer \n" RESET);
+    } else {
+        printf("\n%sWrite result (%d bytes): operation completed successfully%s\n", COLOR_GREEN, res, RESET);
     }
 }
 
@@ -204,7 +169,7 @@ int write_op() {
  */
 int read_op() {
     if (device_fd < 0) {
-        printf(COLOR_RED "No device actually opened. Open a device first..\n" COLOR_RESET);
+        printf(COLOR_RED "No device actually opened. Open a device first..\n" RESET);
         return -1;
     }
 
@@ -222,10 +187,11 @@ int read_op() {
     clear_buffer();
     res = read(device_fd, data_buff, min(amount, 4096));
     if (res == 0 || res == -1)
-        printf(COLOR_RED "\nRead result | no data was read from the device file \n" COLOR_RESET);
+        printf(COLOR_RED "\nRead result | no data was read from the device file \n" RESET);
     else {
-        printf("\n%sRead result |  (%d bytes)%s:%s\n\n", COLOR_GREEN, res, COLOR_RESET, data_buff);
+        printf("\n%sRead result |  (%d bytes)%s:%s\n\n", COLOR_GREEN, res, RESET, data_buff);
     }
+    printf(COLOR_RED "No device actually opened. Open a device first.\n" RESET);
 }
 
 /**
@@ -233,27 +199,27 @@ int read_op() {
  */
 int show_menu() {
     system("clear");
-    printf(COLOR_YELLOW "      ╔═══════════════════════════════╗\n" COLOR_RESET);
+    printf(COLOR_YELLOW "      ╔═══════════════════════════════╗\n" RESET);
     printf("      %s║%s MultiFlow Device Driver - CLI ║\n", COLOR_YELLOW, BOLD);
-    printf(COLOR_YELLOW "      ╚═══════════════════════════════╝\n" COLOR_RESET);
-    printf(COLOR_YELLOW "┌───────────────────────────────────────────┐\n" COLOR_RESET);
-    printf("%s│%s%s Currently Opened Device:%s ", COLOR_YELLOW, COLOR_RESET, BOLD, RESET);
+    printf(COLOR_YELLOW "      ╚═══════════════════════════════╝\n" RESET);
+    printf(COLOR_YELLOW "┌───────────────────────────────────────────┐\n" RESET);
+    printf("%s│%s%s Currently Opened Device:%s ", COLOR_YELLOW, RESET, BOLD, RESET);
     if (device_fd == -1) {
         printf(COLOR_RED "%s\n" COLOR_RED, opened_device);
     } else {
         printf(COLOR_GREEN "%s\n" COLOR_GREEN, opened_device);
     }
-    printf(COLOR_YELLOW "├───────────────────────────────────────────┤\n" COLOR_RESET);
+    printf(COLOR_YELLOW "├───────────────────────────────────────────┤\n" RESET);
 
     for (i = 0; i < menu_size; ++i) {
         printf(COLOR_YELLOW "│ ");
-        printf("%s%s%s\n", COLOR_BLUE, main_menu_list[i], COLOR_RESET);
+        printf("%s%s%s\n", COLOR_BLUE, main_menu_list[i], RESET);
     }
-    printf(COLOR_YELLOW "├───────────────────────────────────────────┤\n" COLOR_RESET);
-    printf(COLOR_YELLOW "│" COLOR_RESET);
+    printf(COLOR_YELLOW "├───────────────────────────────────────────┤\n" RESET);
+    printf(COLOR_YELLOW "│" RESET);
     printf(BOLD " > Insert your command: " RESET);
     fgets(data_buff, sizeof(data_buff), stdin);
-    printf(COLOR_YELLOW "└───────────────────────────────────────────┘\n\n" COLOR_RESET);
+    printf(COLOR_YELLOW "└───────────────────────────────────────────┘\n\n" RESET);
     cmd = atoi(data_buff);
     clear_buffer();
 }
@@ -316,13 +282,13 @@ int set_device_enabling(int status) {
     minor_cmd = atoi(data_buff);
     if (minor_cmd == -1) {
         if (device_fd == -1) {
-            printf(COLOR_RED "No device actually opened. Open a device first..\n" COLOR_RESET);
+            printf(COLOR_RED "No device actually opened. Open a device first..\n" RESET);
             return -1;
         }
         minor_cmd = minor;
     }
     if (minor_cmd < -1 || minor_cmd > NUM_DEVICES - 1) {
-        printf(COLOR_RED "Insert a valid minor 0-127\n" COLOR_RESET);
+        printf(COLOR_RED "Insert a valid minor 0-127\n" RESET);
         return -1;
     }
     clear_buffer();
@@ -347,13 +313,13 @@ int show_device_status() {
     clear_buffer();
     if (minor_cmd == -1) {
         if (device_fd == -1) {
-            printf(COLOR_RED "No device actually opened. Open a device first..\n" COLOR_RESET);
+            printf(COLOR_RED "No device actually opened. Open a device first..\n" RESET);
             return -1;
         }
         minor_cmd = minor;
     }
     if (minor_cmd < -1 || minor_cmd > NUM_DEVICES - 1) {
-        printf(COLOR_RED "Insert a valid minor 0-127\n" COLOR_RESET);
+        printf(COLOR_RED "Insert a valid minor 0-127\n" RESET);
         return -1;
     }
 
@@ -381,10 +347,41 @@ int show_device_status() {
 }
 
 /**
+ * Modifica i parametri della sessione tramite ioctl()
+ */
+int setup_session(int op) {
+    int timeout;
+    int ret;
+
+    if (device_fd == -1) {
+        printf(COLOR_RED "No active session. Open a device first.\n" RESET);
+        return -1;
+    }
+    if (op != 7) {
+        timeout = 0;
+    } else {
+        printf("Insert timeout in milliseconds: ");
+        fgets(data_buff, sizeof(data_buff), stdin);
+
+        if (atoi(data_buff) < 1) {
+            printf(COLOR_RED "Insert a positive (>0ms) timeout value\n" RESET);
+            return -1;
+        }
+    }
+    timeout = atoi(data_buff);
+    ret = ioctl(device_fd, op, timeout);
+    if (ret == -1) {
+        printf(COLOR_RED "Error executing ioctl\n" RESET);
+        return -1;
+    }
+    printf(COLOR_GREEN "Session settings correctly changed\n" RESET);
+}
+
+/**
  * Chiude il programma liberando tutte le risorse
  */
 int exit_op() {
     // TODO aggiungere sblocco mutex rilascio risorse e quant'altro
-    printf(COLOR_CYAN "Goodbye.\n" COLOR_RESET);
+    printf(COLOR_CYAN "Goodbye.\n" RESET);
     exit(0);
 }
