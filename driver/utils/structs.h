@@ -18,8 +18,8 @@ typedef struct _stream_block {
 typedef struct _object_state {
     struct mutex operation_synchronizer;  // Lock sullo specifico device, per sincronizzare l'accesso di thread concorrenti
     stream_block *head;                   // Puntatore al primo blocco dati dello stream
-    stream_block *tail;                   // Puntatore all' ultimo blocco dati dello stream. Permette di appendere più velocemente uno stream block
-    wait_queue_head_t wait_queue;
+    stream_block *tail;                   // Puntatore all' ultimo blocco dati dello stream. Permette di appendere più velocemente un nuovo stream block.
+    wait_queue_head_t wait_queue;         // Wait Event Queue, mantiene i task bloccanti messi in sleep.
 } object_state;
 
 /**

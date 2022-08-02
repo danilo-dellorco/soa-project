@@ -10,6 +10,7 @@
 #include <linux/version.h> /* For LINUX_VERSION_CODE */
 
 #define NUM_DEVICES 3  // TODO set to 128
+#define NUM_FLOWS 2    // TODO set to 128
 
 #define LOW_PRIORITY 0
 #define HIGH_PRIORITY 1
@@ -51,4 +52,18 @@ MODULE_PARM_DESC(waiting_threads_low, "Number of threads waiting for data on the
 unsigned long waiting_threads_high[NUM_DEVICES];
 module_param_array(waiting_threads_high, ulong, NULL, 0440);
 MODULE_PARM_DESC(waiting_threads_high, "Number of threads waiting for data on the high priority flow.");
+
+char *get_prio_str(int code) {
+    if (code == 0) {
+        return "LOW_PRIORITY";
+    }
+    return "HIGH_PRIORITY";
+}
+
+char *get_block_str(int code) {
+    if (code == 0) {
+        return "BLOCKING";
+    }
+    return "NON-BLOCKING";
+}
 #endif

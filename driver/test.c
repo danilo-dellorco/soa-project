@@ -4,7 +4,7 @@
 #include "utils/structs.h"
 #include "utils/tools.h"
 
-#define TEST
+// #define TEST
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Danilo Dell'Orco");
@@ -23,9 +23,10 @@ static int Minor;
 
 /**
  * Dobbiamo gestire 128 dispositivi di I/O, quindi 128 minor numbers differenti.
- * Definiamo quindi 128 differenti strutture object_state mantenute nell'array objects
+ * Definiamo quindi 128 differenti strutture object_state mantenute nell'array objects.
+ * Per ogni device ci sono 2 strutture object_state, per ognuno dei due flussi di priorità
  **/
-object_state objects[NUM_DEVICES];
+object_state objects[NUM_DEVICES][NUM_FLOWS];
 
 /*
  * Invocata dal VFS quando apriamo il nodo associato al driver.
@@ -35,11 +36,12 @@ static int dev_open(struct inode *inode, struct file *file) {
 
     Minor = get_minor(file);
 
-    if (Minor >= NUM_DEVICES) {
+    if (Minor >= NUM_DEVICES || Minor < 0) {
+        printk("%s: minor %d not in (0,%d).\n", MODNAME, Minor, NUM_DEVICES - 1);
         return -ENODEV;
     }
 
-    if (device_enabling[Minor] == 0) {
+    if (device_enabling[Minor] == DISABLED) {
         printk("%s: device with minor %d is disabled, and cannot be opened.\n", MODNAME, Minor);
         return -2;
     }
@@ -83,6 +85,8 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
     session_state *session = filp->private_data;
     stream_block *current_block;
     stream_block *empty_block;
+    int priority = session->priority;
+    int blocking = session->blocking;
 
     char *block_buff;
     int ret;
@@ -94,8 +98,9 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
     empty_block->next = NULL;
     empty_block->stream_content = NULL;
 
-    the_object = objects + Minor;
-    printk("%s: somebody called a write of %ld bytes on dev [%d,%d]\n", MODNAME, len, Major, Minor);
+    the_object = &objects[Minor][priority];
+
+    printk("%s: somebody called a %s %s write of %ld bytes on dev [%d,%d]\n", MODNAME, get_prio_str(priority), get_block_str(blocking), len, Major, Minor);
 
     ret = try_mutex_lock(the_object, session, Minor);
     if (ret < 0) {
@@ -104,7 +109,11 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
 
     ret = copy_from_user(block_buff, buff, len);
 
-    total_bytes_high[Minor] += (len - ret);
+    if (priority == HIGH_PRIORITY) {
+        total_bytes_high[Minor] += (len - ret);
+    } else {
+        total_bytes_low[Minor] += (len - ret);
+    }
 
     current_block = the_object->tail;
     empty_block->id = current_block->id + 1;
@@ -144,10 +153,13 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off) 
     stream_block *completed_block;
     session_state *session = filp->private_data;
 
+    int priority = session->priority;
+    int blocking = session->blocking;
+
     cls = clear_user(buff, len);
 
-    the_object = objects + Minor;
-    printk("%s: somebody called a read of %ld bytes on dev [%d,%d]\n", MODNAME, len, Major, Minor);
+    the_object = &objects[Minor][priority];
+    printk("%s: somebody called a %s %s read of %ld bytes on dev [%d,%d]\n", MODNAME, get_prio_str(priority), get_block_str(blocking), len, Major, Minor);
 
     ret = try_mutex_lock(the_object, session, Minor);
     if (ret < 0) {
@@ -197,7 +209,11 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off) 
 
             // Siamo nell'ultimo blocco, quindi abbiamo letto tutti i dati dello stream
             if (current_block->stream_content == NULL) {
-                total_bytes_high[Minor] -= bytes_read;
+                if (priority == HIGH_PRIORITY) {
+                    total_bytes_high[Minor] -= bytes_read;
+                } else {
+                    total_bytes_low[Minor] -= bytes_read;
+                }
                 printk("%s: read completed (1), read %d bytes\n", MODNAME, bytes_read);
                 the_object->head = current_block;
                 the_object->tail = current_block;
@@ -213,7 +229,11 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off) 
             ret = copy_to_user(&buff[bytes_read], &(current_block->stream_content[current_block->read_offset]), to_read);
             bytes_read += (to_read - ret);
             current_block->read_offset += (to_read - ret);
-            total_bytes_high[Minor] -= bytes_read;
+            if (priority == HIGH_PRIORITY) {
+                total_bytes_high[Minor] -= bytes_read;
+            } else {
+                total_bytes_low[Minor] -= bytes_read;
+            }
             printk("%s: read completed (2), read %d bytes\n", MODNAME, bytes_read);
             mutex_unlock(&(the_object->operation_synchronizer));
             wake_up(&the_object->wait_queue);
@@ -238,13 +258,13 @@ static long dev_ioctl(struct file *filp, unsigned int command, unsigned long par
 
     switch (command) {
         case 3:
-            session->priority = HIGH_PRIORITY;
+            session->priority = LOW_PRIORITY;
             printk(
                 "%s: ioctl(%u) | somebody has set priority level to LOW on [%d,%d]\n",
                 MODNAME, command, Major, Minor);
             break;
         case 4:
-            session->priority = LOW_PRIORITY;
+            session->priority = HIGH_PRIORITY;
             printk(
                 "%s: ioctl(%u) | somebody has set priority level to HIGH on [%d,%d]\n",
                 MODNAME, command, Major, Minor);
@@ -304,29 +324,27 @@ static struct file_operations fops = {
  *  Inizializza il modulo, scrivendo sul buffer del kernel il Major Number assegnato al Driver.
  */
 int init_module(void) {
-    int i;
-
-    // Inizializzo lo stato di ogni device.
+    int i, j;
     for (i = 0; i < NUM_DEVICES; i++) {
-        mutex_init(&(objects[i].operation_synchronizer));
+        for (j = 0; j < NUM_FLOWS; j++) {
+            mutex_init(&(objects[i][j].operation_synchronizer));
 
-        // Allocazione per il primo blocco di stream
-        objects[i].head = kzalloc(sizeof(stream_block), GFP_KERNEL);
-        objects[i].head->id = 0;
-        objects[i].tail = objects[i].head;
-        objects[i].head->next = NULL;
-        objects[i].head->stream_content = NULL;
-        objects[i].head->read_offset = 0;
+            // Allocazione per il primo blocco di stream
+            objects[i][j].head = kzalloc(sizeof(stream_block), GFP_KERNEL);
+            objects[i][j].head->id = 0;
+            objects[i][j].tail = objects[i][j].head;
+            objects[i][j].head->next = NULL;
+            objects[i][j].head->stream_content = NULL;
+            objects[i][j].head->read_offset = 0;
 
-        // Di default tutti i dispositivi sono abilitati
+            // Di default tutti i dispositivi sono abilitati
+            init_waitqueue_head(&objects[i][j].wait_queue);
+
+            if (objects[i][j].head == NULL) goto revert_allocation;
+        }
         device_enabling[i] = ENABLED;
-
-        init_waitqueue_head(&objects[i].wait_queue);
-
-        if (objects[i].head == NULL) goto revert_allocation;
     }
 
-    // Registro il device, con major 0 per allocazione dinamica. count=128 perchè voglio gestire massimo 128 devices
     Major = __register_chrdev(0, 0, 128, DEVICE_NAME, &fops);
 
     if (Major < 0) {
@@ -341,7 +359,7 @@ int init_module(void) {
 revert_allocation:
     printk(KERN_INFO "revert allocation\n");
     for (; i >= 0; i--) {
-        kfree(objects[i].head);
+        kfree(objects[i][j].head);
     }
     return -ENOMEM;
 }

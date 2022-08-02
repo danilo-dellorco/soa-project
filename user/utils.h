@@ -84,12 +84,10 @@ void wait_input(void) {
     printf("───────────────────────────────────────────────────────────\n");
     printf("Press %s[Enter]%s to continue...", BOLD, RESET);
     fflush(stdout);
-    getchar();
+    while (getchar() != '\n') {
+        // nothing
+    }
 }
-
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 
 /**
  * Funzione ausiliaria di read_param_field
