@@ -1,3 +1,11 @@
+/*
+=====================================================================================================
+                                                params.h
+-----------------------------------------------------------------------------------------------------
+Mantiene tutti i parametri e le costanti utilizzate all'interno del device driver
+=====================================================================================================
+*/
+
 #ifndef PARAMS_H
 #define PARAMS_H
 #include <linux/fs.h>
@@ -8,6 +16,7 @@
 #include <linux/sched.h>
 #include <linux/tty.h>     /* For the tty declarations */
 #include <linux/version.h> /* For LINUX_VERSION_CODE */
+#include <linux/workqueue.h>
 
 #define NUM_DEVICES 3  // TODO set to 128
 #define NUM_FLOWS 2    // TODO set to 128
@@ -21,10 +30,13 @@
 #define DISABLED 0
 #define ENABLED 1
 
+#define WRITE_OP 1
+#define READ_OP 2
+
 #define MODNAME "MULTI-FLOW DEV"
 #define DEVICE_NAME "test-dev" /* Device file name in /dev/ - not mandatory  */
 
-#define TEST_TIME 30000  // Tempo di attesa prima di rilasciare il lock nella fase di testing
+#define TEST_TIME 15000  // Tempo di attesa prima di rilasciare il lock nella fase di testing
 
 /**
  *  Parametri del modulo

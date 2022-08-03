@@ -1,3 +1,11 @@
+/*
+=====================================================================================================
+                                            tools.h
+-----------------------------------------------------------------------------------------------------
+Funzioni e macro ausiliarie utilizzate nel device driver
+=====================================================================================================
+*/
+
 #include "params.h"
 
 /**
@@ -45,40 +53,47 @@ int put_to_waitqueue(unsigned long timeout, struct mutex *mutex, wait_queue_head
  * Se l'operazione è bloccante ed il lock non viene acquisito, il task viene messo nella waitqueue.
  * Ritorna 0 se il lock viene acquisito correttamente, -1 se il lock non viene acquisito allo scadere del timeout, -2 se il lock non viene acquisito in una operazione non-bloccante.
  */
-int try_mutex_lock(object_state *the_object, session_state *session, int minor) {
+int try_mutex_lock(object_state *the_object, session_state *session, int minor, int op) {
     int lock;
     int ret;
     wait_queue_head_t *wq;
     wq = &the_object->wait_queue;
 
-    lock = mutex_trylock(&(the_object->operation_synchronizer));
-    if (lock == 0) {
-        printk("%s: unable to get lock now\n", MODNAME);
-        if (session->blocking == BLOCKING) {
-            printk("%s: Blocking operation, attempt to get lock.\n", MODNAME);
-            if (session->priority == HIGH_PRIORITY)
-                waiting_threads_high[minor]++;
-            else
-                waiting_threads_low[minor]++;
+    // Una scrittura low priority non può fallire, quindi il processo attende attivamente di ottenere il lock.
+    if (session->priority == LOW_PRIORITY && op == WRITE_OP) {
+        waiting_threads_low[minor]++;
+        printk("%s: Process %d waiting to get lock.\n", MODNAME, session->timeout);
+        mutex_lock(&(the_object->operation_synchronizer));
+        printk("%s: Process %d acquired lock.\n", MODNAME, session->timeout);
+        waiting_threads_low[minor]--;
+        return 0;
+    }
+}
+lock = mutex_trylock(&(the_object->operation_synchronizer));
 
-            ret = put_to_waitqueue(session->timeout, &the_object->operation_synchronizer, wq);
+if (lock == 0) {
+    printk("%s: Unable to get lock.\n", MODNAME);
+    if (session->blocking == BLOCKING) {
+        printk("%s: Attempt to get lock. Timeout of %d ms\n", MODNAME, session->timeout);
 
-            if (session->priority == HIGH_PRIORITY)
-                waiting_threads_high[minor]--;
-            else
-                waiting_threads_low[minor]--;
+        waiting_threads_high[minor]++;
+        ret = put_to_waitqueue(session->timeout, &the_object->operation_synchronizer, wq);
+        waiting_threads_high[minor]--;
 
-            // Sessione bloccante, ma lock non acquisito a timeout scaduto
-            if (ret == 0) {
-                printk("%s: Non-blocking operation, operation failed.\n", MODNAME);
-                return -1;
-            }
-        }
-
-        // Sessione non bloccante e lock non acquisito
-        else {
-            return -2;
+        // Sessione bloccante, ma lock non acquisito a timeout scaduto
+        if (ret == 0) {
+            printk("%s: Timeout expired, lock not acquired.\n", MODNAME);
+            return -1;
         }
     }
-    return 0;
+
+    // Sessione non bloccante e lock non acquisito
+    else {
+        printk("%s: Non-blocking operation, lock failed.\n", MODNAME);
+        return -2;
+    }
+}
+
+printk("%s: Lock succesfully acquired.\n", MODNAME);
+return 0;
 }

@@ -1,3 +1,12 @@
+/*
+=====================================================================================================
+                                            user.c
+-----------------------------------------------------------------------------------------------------
+    Implementa una semplice Command Line Interface per interagire con i dispositivi tramite il
+                                        multiflow-driver
+=====================================================================================================
+*/
+
 #include "utils.h"
 
 int i;
@@ -173,7 +182,7 @@ int read_op() {
 
     if (atoi(data_buff) < 0) {
         printf("Insert a positive byte quantity to read\n");
-        return (-1);
+        return -1;
     }
     amount = atoi(data_buff);
 
@@ -182,9 +191,10 @@ int read_op() {
     if (res == 0 || res == -1)
         printf(COLOR_RED "\nRead result | no data was read from the device file \n" RESET);
     else {
-        printf("\n%sRead result |  (%d bytes)%s:%s\n\n", COLOR_GREEN, res, RESET, data_buff);
+        printf("\n%sRead result (%d bytes)%s: %s\n\n", COLOR_GREEN, res, RESET, data_buff);
     }
-    printf(COLOR_RED "No device actually opened. Open a device first.\n" RESET);
+
+    return res;
 }
 
 /**

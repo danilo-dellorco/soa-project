@@ -1,3 +1,11 @@
+/*
+=====================================================================================================
+                                            structs.h
+-----------------------------------------------------------------------------------------------------
+Mantiene tutte le strutture utilizzate all'interno del device driver
+=====================================================================================================
+*/
+
 #ifndef STRUCTS_H
 #define STRUCTS_H
 #include "params.h"
@@ -26,9 +34,20 @@ typedef struct _object_state {
  * Mantiene lo stato della sessione
  */
 typedef struct _session_state {
-    int blocking;  // Operazioni bloccanti o non-bloccanti
+    int blocking;  // Operazioni bloccanti o non-bloccanti [0,1] = [blocking,non-blocking]
     int priority;  // Livello di priorità della sessione [0,1] = [low,high]
-    int timeout;   // TODO implementare timeout
+    int timeout;   // Timeout per il risveglio dei thread in wait_queue [>0]
 } session_state;
+
+/**
+ *  Struttura utilizzata nel meccanismo di deferred work
+ */
+typedef struct _packed_work_struct {
+    const char *data;         // Puntatore ai dati
+    int minor;                // Minor number del device
+    size_t len;               // Lunghezza del buffer dati
+    session_state *session;   // Puntatore alla sessione verso il device su cui effettuare la scrittura
+    struct work_struct work;  // Struttura di deferred work
+} packed_work_struct;
 
 #endif

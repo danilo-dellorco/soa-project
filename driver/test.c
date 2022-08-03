@@ -1,10 +1,18 @@
+/*
+=====================================================================================================
+                                            multiflow-driver.c
+-----------------------------------------------------------------------------------------------------
+Implementa l'effettivo Multi-flow device driver
+=====================================================================================================
+*/
+
 #include <linux/delay.h>
 
 #include "utils/params.h"
 #include "utils/structs.h"
 #include "utils/tools.h"
 
-// #define TEST
+#define TEST
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Danilo Dell'Orco");
@@ -17,6 +25,10 @@ MODULE_AUTHOR("Danilo Dell'Orco");
 static int dev_open(struct inode *, struct file *);
 static int dev_release(struct inode *, struct file *);
 static ssize_t dev_write(struct file *, const char *, size_t, loff_t *);
+
+ssize_t write_on_stream(const char *buff, size_t len, session_state *session, object_state *the_object);
+int write_low(const char *buff, size_t len, session_state *session, object_state *the_object);
+void write_deferred(struct work_struct *deferred_work);
 
 static int Major;
 static int Minor;
@@ -81,56 +93,25 @@ static int dev_release(struct inode *inode, struct file *file) {
  * @param off offset all'area di memoria filp su cui lavoriamo.
  */
 static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t *off) {
-    object_state *the_object;
     session_state *session = filp->private_data;
-    stream_block *current_block;
-    stream_block *empty_block;
     int priority = session->priority;
     int blocking = session->blocking;
+    ssize_t written_bytes = 0;
 
-    char *block_buff;
-    int ret;
-
-    // Blocco vuoto per la scrittura successiva. E' il blocco successivo a quello attualmente scritto
-    empty_block = kzalloc(sizeof(stream_block), GFP_ATOMIC);
-    block_buff = kzalloc(len + 1, GFP_ATOMIC);  // +1 per \n sui multipli di 8 bytes
-
-    empty_block->next = NULL;
-    empty_block->stream_content = NULL;
-
+    object_state *the_object;
     the_object = &objects[Minor][priority];
-
     printk("%s: somebody called a %s %s write of %ld bytes on dev [%d,%d]\n", MODNAME, get_prio_str(priority), get_block_str(blocking), len, Major, Minor);
 
-    ret = try_mutex_lock(the_object, session, Minor);
-    if (ret < 0) {
-        return -EAGAIN;
+    if (priority == LOW_PRIORITY) {
+        written_bytes = write_low(buff, len, session, the_object);
+        total_bytes_low[Minor] += written_bytes;
+
+    } else if (priority == HIGH_PRIORITY) {
+        written_bytes = write_on_stream(buff, len, session, the_object);
+        total_bytes_high[Minor] += written_bytes;
     }
 
-    ret = copy_from_user(block_buff, buff, len);
-
-    if (priority == HIGH_PRIORITY) {
-        total_bytes_high[Minor] += (len - ret);
-    } else {
-        total_bytes_low[Minor] += (len - ret);
-    }
-
-    current_block = the_object->tail;
-    empty_block->id = current_block->id + 1;
-
-    current_block->stream_content = block_buff;
-    current_block->next = empty_block;
-    the_object->tail = empty_block;
-
-#ifdef TEST
-    printk("%s: [TEST] waiting %d msec to release write lock\n", MODNAME, TEST_TIME);
-    msleep(30000);
-#endif
-    mutex_unlock(&(the_object->operation_synchronizer));
-    wake_up(&the_object->wait_queue);
-    printk("%s: lock released\n", MODNAME);
-    printk("%s: written %ld bytes in block %d: '%s'\n", MODNAME, strlen(current_block->stream_content), current_block->id, current_block->stream_content);
-    return len - ret;
+    return written_bytes;
 }
 
 /**
@@ -161,7 +142,7 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off) 
     the_object = &objects[Minor][priority];
     printk("%s: somebody called a %s %s read of %ld bytes on dev [%d,%d]\n", MODNAME, get_prio_str(priority), get_block_str(blocking), len, Major, Minor);
 
-    ret = try_mutex_lock(the_object, session, Minor);
+    ret = try_mutex_lock(the_object, session, Minor, READ_OP);
     if (ret < 0) {
         return -EAGAIN;
     }
@@ -374,4 +355,109 @@ void cleanup_module(void) {
     printk(KERN_INFO "%s: new device unregistered, it was assigned major number %d\n", MODNAME, Major);
 
     return;
+}
+
+ssize_t write_on_stream(const char *buff, size_t len, session_state *session, object_state *the_object) {
+    stream_block *current_block;
+    stream_block *empty_block;
+
+    char *block_buff;
+    int ret;
+
+    // Blocco vuoto per la scrittura successiva. E' il blocco successivo a quello attualmente scritto
+    empty_block = kzalloc(sizeof(stream_block), GFP_ATOMIC);
+    block_buff = kzalloc(len + 1, GFP_ATOMIC);  // +1 per \n sui multipli di 8 bytes
+
+    empty_block->next = NULL;
+    empty_block->stream_content = NULL;
+
+    printk("%s: stream write | to_write: %ld bytes\n", MODNAME, len);
+    ret = try_mutex_lock(the_object, session, Minor, WRITE_OP);
+    if (ret < 0) {
+        return -EAGAIN;
+    }
+
+    if (session->priority == HIGH_PRIORITY) {
+        ret = copy_from_user(block_buff, buff, len);
+    } else if (session->priority == LOW_PRIORITY) {
+        block_buff = (char *)buff;
+        ret = 0;
+    }
+    current_block = the_object->tail;
+    empty_block->id = current_block->id + 1;
+
+    current_block->stream_content = block_buff;
+    current_block->next = empty_block;
+    the_object->tail = empty_block;
+
+#ifdef TEST
+    printk("%s: [TEST] waiting %d msec to release write lock\n", MODNAME, TEST_TIME);
+    msleep(30000);
+#endif
+    mutex_unlock(&(the_object->operation_synchronizer));
+    wake_up(&the_object->wait_queue);
+    printk("%s: lock released, ret = %ld\n", MODNAME, len - ret);
+    printk("%s: written %ld bytes in block %d: '%s'\n", MODNAME, strlen(current_block->stream_content), current_block->id, current_block->stream_content);
+    return len - ret;
+}
+
+/**
+ * Effettua la scrittura per il flusso a bassa priorità. Copia il buffer utente in un buffer kernel temporaneo,
+ * che verrà immesso effettivamente nello stream soltanto quando verrà schedulata la write_deferred.
+ */
+int write_low(const char *buff, size_t len, session_state *session, object_state *the_object) {
+    int ret;
+    packed_work_struct *packed_work;
+
+    printk("%s: Deferred work requested.\n", MODNAME);
+
+    packed_work = kzalloc(sizeof(packed_work_struct), GFP_ATOMIC);
+    if (packed_work == NULL) {
+        printk("%s: Packed work_struct allocation failure\n", MODNAME);
+        return -ENOMEM;
+    }
+
+    packed_work->len = len;
+    packed_work->session = session;
+    packed_work->minor = Minor;
+
+    packed_work->data = kzalloc(len, GFP_ATOMIC);
+    if (packed_work->data == NULL) {
+        printk("%s: Packet work_struct data allocation failure\n", MODNAME);
+        return -ENOMEM;
+    }
+
+    ret = copy_from_user((char *)packed_work->data, buff, len);
+    if (ret != 0) {
+        printk("%s: Packed work_struct data copy failure.\n", MODNAME);
+    }
+
+    printk("%s: Packed work_struct correctly allocated.\n", MODNAME);
+
+    // Inizializza la work_struct nella struttura packed, con function pointer a write_deferred
+    __INIT_WORK(&(packed_work->work), (void *)write_deferred, (unsigned long)&(packed_work->work));
+    schedule_work(&packed_work->work);
+
+    return len - ret;
+}
+
+/**
+ * Effettua la scrittura in modalità deferred. Il numero di bytes scritti vengono notificati immediatamente
+ * quindi non viene ritornato nulla in questa funzione, che non può fallire nel locking.
+ */
+void write_deferred(struct work_struct *deferred_work) {
+    const char *buff;
+    packed_work_struct *packed = container_of(deferred_work, packed_work_struct, work);
+    int minor = packed->minor;
+    session_state *session = packed->session;
+    object_state *the_object = &objects[minor][LOW_PRIORITY];
+    size_t len = packed->len;
+
+    buff = packed->data;
+
+    // printk("buff: %s\n", buff);s
+    // loff_t *off = container_of(deferred_work, packed_work_struct, work)->off;
+
+    printk("%s: kworker daemon awaken with PID=%d. Writing.\n", MODNAME, current->pid);
+    write_on_stream(buff, len, session, the_object);
 }

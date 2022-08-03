@@ -1,1 +1,0 @@
-cmd_/home/danilo/code/soa-project/driver/test.ko := ld -r -m elf_x86_64 --build-id=sha1  -T scripts/module.lds -o /home/danilo/code/soa-project/driver/test.ko /home/danilo/code/soa-project/driver/test.o /home/danilo/code/soa-project/driver/test.mod.o;  true
