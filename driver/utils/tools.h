@@ -61,39 +61,38 @@ int try_mutex_lock(object_state *the_object, session_state *session, int minor, 
 
     // Una scrittura low priority non può fallire, quindi il processo attende attivamente di ottenere il lock.
     if (session->priority == LOW_PRIORITY && op == WRITE_OP) {
-        waiting_threads_low[minor]++;
-        printk("%s: Process %d waiting to get lock.\n", MODNAME, session->timeout);
+        printk("%s: Low Priority - Process %d waiting to get lock.\n", MODNAME, current->pid);
+        __sync_fetch_and_add(&waiting_threads_low[minor], 1);  // Necessario per evitare out-of-order
         mutex_lock(&(the_object->operation_synchronizer));
-        printk("%s: Process %d acquired lock.\n", MODNAME, session->timeout);
-        waiting_threads_low[minor]--;
+        __sync_fetch_and_add(&waiting_threads_low[minor], -1);
+        printk("%s: Low Priority - Process %d acquired lock.\n", MODNAME, current->pid);
         return 0;
     }
-}
-lock = mutex_trylock(&(the_object->operation_synchronizer));
+    lock = mutex_trylock(&(the_object->operation_synchronizer));
 
-if (lock == 0) {
-    printk("%s: Unable to get lock.\n", MODNAME);
-    if (session->blocking == BLOCKING) {
-        printk("%s: Attempt to get lock. Timeout of %d ms\n", MODNAME, session->timeout);
+    if (lock == 0) {
+        printk("%s: Unable to get lock.\n", MODNAME);
+        if (session->blocking == BLOCKING) {
+            printk("%s: Attempt to get lock. Timeout of %d ms\n", MODNAME, session->timeout);
 
-        waiting_threads_high[minor]++;
-        ret = put_to_waitqueue(session->timeout, &the_object->operation_synchronizer, wq);
-        waiting_threads_high[minor]--;
+            waiting_threads_high[minor]++;
+            ret = put_to_waitqueue(session->timeout, &the_object->operation_synchronizer, wq);
+            waiting_threads_high[minor]--;
 
-        // Sessione bloccante, ma lock non acquisito a timeout scaduto
-        if (ret == 0) {
-            printk("%s: Timeout expired, lock not acquired.\n", MODNAME);
-            return -1;
+            // Sessione bloccante, ma lock non acquisito a timeout scaduto
+            if (ret == 0) {
+                printk("%s: Timeout expired, lock not acquired.\n", MODNAME);
+                return -1;
+            }
+        }
+
+        // Sessione non bloccante e lock non acquisito
+        else {
+            printk("%s: Non-blocking operation, lock failed.\n", MODNAME);
+            return -2;
         }
     }
 
-    // Sessione non bloccante e lock non acquisito
-    else {
-        printk("%s: Non-blocking operation, lock failed.\n", MODNAME);
-        return -2;
-    }
-}
-
-printk("%s: Lock succesfully acquired.\n", MODNAME);
-return 0;
+    printk("%s: Lock succesfully acquired.\n", MODNAME);
+    return 0;
 }
