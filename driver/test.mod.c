@@ -45,7 +45,7 @@ __used __section("__versions") = {
 	{ 0x3eeb2322, "__wake_up" },
 	{ 0x3213f038, "mutex_unlock" },
 	{ 0xd8cef6e1, "clear_user" },
-	{ 0x89940875, "mutex_lock_interruptible" },
+	{ 0x4dfa8d4b, "mutex_lock" },
 	{ 0x87a21cb3, "__ubsan_handle_out_of_bounds" },
 	{ 0x72c26d96, "kmem_cache_alloc_trace" },
 	{ 0x9dc7c3ab, "kmalloc_caches" },
@@ -66,4 +66,4 @@ __used __section("__versions") = {
 MODULE_INFO(depends, "");
 
 
-MODULE_INFO(srcversion, "9FB6CEE0AA1767F9C70815C");
+MODULE_INFO(srcversion, "34DCF05986C2741E7A043EF");

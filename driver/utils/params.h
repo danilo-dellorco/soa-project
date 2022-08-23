@@ -34,7 +34,7 @@ Mantiene tutti i parametri e le costanti utilizzate all'interno del device drive
 #define READ_OP 2
 
 #define MODNAME "MULTI-FLOW DEV"
-#define DEVICE_NAME "test-dev" /* Device file name in /dev/ - not mandatory  */
+#define DEVICE_NAME "test-dev" /* Device file name in /dev/ - not mandatory  */  // TODO cambiare nome
 
 #define TEST_TIME 15000  // Tempo di attesa prima di rilasciare il lock nella fase di testing
 
@@ -65,14 +65,14 @@ unsigned long waiting_threads_high[NUM_DEVICES];
 module_param_array(waiting_threads_high, ulong, NULL, 0440);
 MODULE_PARM_DESC(waiting_threads_high, "Number of threads waiting for data on the high priority flow.");
 
-char *get_prio_str(int code) {
+char* get_prio_str(int code) {
     if (code == 0) {
         return "LOW_PRIORITY";
     }
     return "HIGH_PRIORITY";
 }
 
-char *get_block_str(int code) {
+char* get_block_str(int code) {
     if (code == 0) {
         return "BLOCKING";
     }

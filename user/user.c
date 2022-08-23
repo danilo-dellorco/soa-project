@@ -117,26 +117,31 @@ int open_device() {
     clear_buffer();
 
     if (device_fd != -1) {
-        printf("device %s is already opened. Closing.\n", opened_device);
-        close(device_fd);
+        printf("Device %s is already opened.\n", opened_device);
+        return 0;
     }
 
     sprintf(opened_device, "%s%d", device_path, minor);
-    printf("opening device %s\n", opened_device);
+    printf("Opening device %s\n", opened_device);
     device_fd = open(opened_device, O_RDWR);
     if (device_fd == -1) {
-        printf("open error on device, use 'dmesg' for details. %s\n", opened_device);
+        if (read_param_field(DEVICE_ENABLING_PATH, minor) == 0) {
+            printf("%sThe device %s is actually disabled. Enable it before opening %s\n", COLOR_RED, opened_device, RESET);
+            sprintf(opened_device, "none");
+            return -1;
+        }
+        printf(COLOR_RED "Open error on device %s, use 'dmesg' for details.\n", opened_device);
         sprintf(opened_device, "none");
         device_fd = -1;
         return -1;
     }
 
-    printf("%sdevice %s successfully opened, fd is: %d%s\n", COLOR_GREEN, opened_device, device_fd, RESET);
+    printf("%sDevice %s successfully opened, fd is: %d%s\n", COLOR_GREEN, opened_device, device_fd, RESET);
 
     opened_major = get_open_major(opened_device);
 
     if (opened_major != major) {
-        printf("%s%s\nWarning: currently open device has major '%d' than '%d' used by the CLI.%s\n", COLOR_YELLOW, BOLD, opened_major, major, RESET);
+        printf("%s%s\nWarning: currently open device has major '%d' different than '%d' used by the CLI.%s\n", COLOR_YELLOW, BOLD, opened_major, major, RESET);
         printf("%sTry using command (11) to re-create the device node using the current driver.%s\n", COLOR_YELLOW, RESET);
     }
 
@@ -211,6 +216,11 @@ int show_menu() {
         printf(COLOR_RED "%s\n" COLOR_RED, opened_device);
     } else {
         printf(COLOR_GREEN "%s\n" RESET, opened_device);
+        printf(COLOR_YELLOW "├───────────────────────────────────────────┤\n" RESET);
+        printf("│ %sHigh Priority Bytes:%s %d\n", BOLD, RESET, read_param_field(TOTAL_BYTES_HIGH_PATH, minor));
+        printf("│ %sLow Priority Bytes:%s %d\n", BOLD, RESET, read_param_field(TOTAL_BYTES_LOW_PATH, minor));
+        printf("│ %sHigh Priority Waiting Threads:%s %d\n", BOLD, RESET, read_param_field(WAITING_THREADS_HIGH_PATH, minor));
+        printf("│ %sLow Priority Waiting Threads:%s %d\n", BOLD, RESET, read_param_field(WAITING_THREADS_LOW_PATH, minor));
     }
     printf(COLOR_YELLOW "├───────────────────────────────────────────┤\n" RESET);
 
@@ -312,18 +322,11 @@ int set_device_enabling(int status) {
 int show_device_status() {
     int minor_cmd;
 
-    printf("Enter the minor number of the device (-1 for currently opened device): ");
+    printf("Enter the minor number of the device: ");
     fgets(data_buff, sizeof(data_buff), stdin);
     minor_cmd = atoi(data_buff);
     clear_buffer();
-    if (minor_cmd == -1) {
-        if (device_fd == -1) {
-            printf(COLOR_RED "No device actually opened. Open a device first..\n" RESET);
-            return -1;
-        }
-        minor_cmd = minor;
-    }
-    if (minor_cmd < -1 || minor_cmd > NUM_DEVICES - 1) {
+    if (minor_cmd < 0 || minor_cmd > NUM_DEVICES - 1) {
         printf(COLOR_RED "Insert a valid minor 0-127\n" RESET);
         return -1;
     }
@@ -331,23 +334,17 @@ int show_device_status() {
     printf("┌───────────────────────────────────┐\n");
     printf("│%s   Device /dev/test-dev%d Status %s\n", BOLD, minor_cmd, RESET);
     printf("├───────────────────────────────────┤\n");
-    char* enabling = "/sys/module/test/parameters/device_enabling";
-    char* high_b = "/sys/module/test/parameters/total_bytes_high";
-    char* low_b = "/sys/module/test/parameters/total_bytes_low";
-    char* high_t = "/sys/module/test/parameters/waiting_threads_high";
-    char* low_t = "/sys/module/test/parameters/waiting_threads_low";
 
     char* op = "ENABLED";
-    if (read_param_field(enabling, minor_cmd) == 0) {
+    if (read_param_field(DEVICE_ENABLING_PATH, minor_cmd) == 0) {
         op = "DISABLED";
     }
 
     printf("│ %sOperativity:%s %s\n", BOLD, RESET, op);
-    printf("│ %sHigh Priority Bytes:%s %d\n", BOLD, RESET, read_param_field(high_b, minor_cmd));
-    printf("│ %sLow Priority Bytes:%s %d\n", BOLD, RESET, read_param_field(low_b, minor_cmd));
-    printf("│ %sLow Priority Waiting Threads:%s %d\n", BOLD, RESET, read_param_field(high_t, minor_cmd));
-    printf("│ %sHigh Priority Waiting Threads:%s %d\n", BOLD, RESET, read_param_field(low_t, minor_cmd));
-
+    printf("│ %sHigh Priority Bytes:%s %d\n", BOLD, RESET, read_param_field(TOTAL_BYTES_HIGH_PATH, minor_cmd));
+    printf("│ %sLow Priority Bytes:%s %d\n", BOLD, RESET, read_param_field(TOTAL_BYTES_LOW_PATH, minor_cmd));
+    printf("│ %sHigh Priority Waiting Threads:%s %d\n", BOLD, RESET, read_param_field(WAITING_THREADS_HIGH_PATH, minor_cmd));
+    printf("│ %sLow Priority Waiting Threads:%s %d\n", BOLD, RESET, read_param_field(WAITING_THREADS_LOW_PATH, minor_cmd));
     printf("└───────────────────────────────────┘\n");
 }
 

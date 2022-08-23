@@ -5,6 +5,7 @@
 Funzioni e macro ausiliarie utilizzate nel device driver
 =====================================================================================================
 */
+// TODO problema con due thread high priority e quello bloccante muore invece di aspettare
 
 #include "params.h"
 
@@ -29,20 +30,20 @@ int put_to_waitqueue(unsigned long timeout, struct mutex *mutex, wait_queue_head
         return 0;
     }
 
-    printk("%s: thread with pid %d will sleep for %lu ms\n", MODNAME, current->pid, timeout);
+    printk("%s: put_to_waitqueue | thread with pid %d will sleep for %lu ms\n", MODNAME, current->pid, timeout);
 
     // Si mette in sleep il processo finché la condizione non è True. La condizione viene verificata ogni volta che la waitqueue viene risvegliata.
     // Ritorna il numero di jiffies rimenenti (>=1) se la condizione viene verificata, 0 se resta False fino allo scadere del timeout
     val = wait_event_timeout(*wq, mutex_trylock(mutex), msecs_to_jiffies(timeout));
 
-    printk("%s: thread with pid %d awaken\n", MODNAME, current->pid);
+    printk("%s: put_to_waitqueue | thread with pid %d awaken\n", MODNAME, current->pid);
 
     // Non è stato acquisito il lock
     if (val == 0) {
-        printk("--> thread %d timeout elapsed. lock not acquired\n", current->pid);
+        printk("put_to_waitqueue | thread %d timeout elapsed. lock not acquired\n", current->pid);
         return 0;
     }
-    printk("--> thread %d lock acquired\n", current->pid);
+    printk("put_to_waitqueue | thread %d lock acquired\n", current->pid);
 
     return 1;
 }
@@ -61,13 +62,15 @@ int try_mutex_lock(object_state *the_object, session_state *session, int minor, 
 
     // Una scrittura low priority non può fallire, quindi il processo attende attivamente di ottenere il lock.
     if (session->priority == LOW_PRIORITY && op == WRITE_OP) {
-        printk("%s: Low Priority - Process %d waiting to get lock.\n", MODNAME, current->pid);
+        printk("%s: try_mutex_lock | Low Priority - Process %d waiting to get lock.\n", MODNAME, current->pid);
         __sync_fetch_and_add(&waiting_threads_low[minor], 1);  // Necessario per evitare out-of-order
         mutex_lock(&(the_object->operation_synchronizer));
         __sync_fetch_and_add(&waiting_threads_low[minor], -1);
-        printk("%s: Low Priority - Process %d acquired lock.\n", MODNAME, current->pid);
+        printk("%s: try_mutex_lock | Low Priority - Process %d acquired lock.\n", MODNAME, current->pid);
         return 0;
     }
+
+    // Operazioni HIGH_PRIORITY
     lock = mutex_trylock(&(the_object->operation_synchronizer));
 
     if (lock == 0) {
@@ -81,7 +84,7 @@ int try_mutex_lock(object_state *the_object, session_state *session, int minor, 
 
             // Sessione bloccante, ma lock non acquisito a timeout scaduto
             if (ret == 0) {
-                printk("%s: Timeout expired, lock not acquired.\n", MODNAME);
+                // printk("%s: Timeout expired, lock not acquired.\n", MODNAME);
                 return -1;
             }
         }

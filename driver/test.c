@@ -14,10 +14,10 @@ Implementa l'effettivo Multi-flow device driver
 
 #define TEST
 
+// TODO qualche bug nella lettura high di bytes superiori, settano a -1 tipo.
+
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Danilo Dell'Orco");
-
-// TODO implementare doppio flusso
 
 /*
  * Prototipi delle funzioni del driver

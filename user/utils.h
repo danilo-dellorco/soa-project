@@ -11,29 +11,35 @@
 
 #define NUM_DEVICES 3  // TODO set to 128
 
+#define DEVICE_ENABLING_PATH "/sys/module/test/parameters/device_enabling"
+#define TOTAL_BYTES_HIGH_PATH "/sys/module/test/parameters/total_bytes_high"
+#define TOTAL_BYTES_LOW_PATH "/sys/module/test/parameters/total_bytes_low"
+#define WAITING_THREADS_HIGH_PATH "/sys/module/test/parameters/waiting_threads_high"
+#define WAITING_THREADS_LOW_PATH "/sys/module/test/parameters/waiting_threads_low"
+
 /**
  * Lista di comandi utilizzabili
  */
 char* main_menu_list[] = {
-    "--------- OPERATIONS ---------",
-    "0)  Open a device file",
-    "1)  Write on the device file",
-    "2)  Read from the device file",
+    "\x1B[1m--------- OPERATIONS ---------\x1B[0m",
+    "\x1B[1m0)\x1B[0m  Open a device file",
+    "\x1B[1m1)\x1B[0m  Write on the device file",
+    "\x1B[1m2)\x1B[0m  Read from the device file",
     "",
-    "------ SESSION SETTINGS ------",
-    "3)  Switch to LOW priority",
-    "4)  Switch to HIGH priority",
-    "5)  Use BLOCKING operations",
-    "6)  Use NON-BLOCKING operations",
-    "7)  Set timeout",
+    "\x1B[1m------ SESSION SETTINGS ------\x1B[0m",
+    "\x1B[1m3)\x1B[0m  Switch to LOW priority",
+    "\x1B[1m4)\x1B[0m  Switch to HIGH priority",
+    "\x1B[1m5)\x1B[0m  Use BLOCKING operations",
+    "\x1B[1m6)\x1B[0m  Use NON-BLOCKING operations",
+    "\x1B[1m7)\x1B[0m  Set timeout",
     "",
-    "------ DEVICE MANAGEMENT ------",
-    "8)  Enable a device file",
-    "9)  Disable a device file",
-    "10) See device status",
-    "11) Create device nodes",
+    "\x1B[1m------ DEVICE MANAGEMENT ------\x1B[0m",
+    "\x1B[1m8)\x1B[0m  Enable a device file",
+    "\x1B[1m9)\x1B[0m  Disable a device file",
+    "\x1B[1m10)\x1B[0m See device status",
+    "\x1B[1m11)\x1B[0m Create device nodes",
     "",
-    "-------------------------------",
+    "\x1B[1m-------------------------------\x1B[0m",
     "-1) Exit",
 };
 
