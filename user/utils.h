@@ -11,11 +11,11 @@
 
 #define NUM_DEVICES 128
 
-#define DEVICE_ENABLING_PATH "/sys/module/test/parameters/device_enabling"
-#define TOTAL_BYTES_HIGH_PATH "/sys/module/test/parameters/total_bytes_high"
-#define TOTAL_BYTES_LOW_PATH "/sys/module/test/parameters/total_bytes_low"
-#define WAITING_THREADS_HIGH_PATH "/sys/module/test/parameters/waiting_threads_high"
-#define WAITING_THREADS_LOW_PATH "/sys/module/test/parameters/waiting_threads_low"
+#define DEVICE_ENABLING_PATH "/sys/module/multiflow_driver/parameters/device_enabling"
+#define TOTAL_BYTES_HIGH_PATH "/sys/module/multiflow_driver/parameters/total_bytes_high"
+#define TOTAL_BYTES_LOW_PATH "/sys/module/multiflow_driver/parameters/total_bytes_low"
+#define WAITING_THREADS_HIGH_PATH "/sys/module/multiflow_driver/parameters/waiting_threads_high"
+#define WAITING_THREADS_LOW_PATH "/sys/module/multiflow_driver/parameters/waiting_threads_low"
 
 #define LOW_PRIORITY "Low"
 #define HIGH_PRIORITY "High"

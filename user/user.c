@@ -155,11 +155,10 @@ int open_device() {
         if (read_param_field(DEVICE_ENABLING_PATH, minor) == 0) {
             printf("%sThe device %s is actually disabled. Enable it before opening %s\n", COLOR_RED, opened_device, RESET);
         } else if (errno == EPERM) {
-            printf(COLOR_RED "Open error, invalid permissions on device %s.\n", opened_device);
+            printf(COLOR_RED "Open error, invalid permissions on device %s.\n" RESET, opened_device);
         } else if (errno == ENOENT) {
-            printf(COLOR_RED "Open error, device %s does not exists.\n", opened_device);
+            printf(COLOR_RED "Open error, device %s does not exists.\n" RESET, opened_device);
         }
-        printf(COLOR_RED "Open error on device %s, use 'dmesg' for details.\n", opened_device);
         sprintf(opened_device, "none");
         device_fd = -1;
         return -1;
@@ -247,7 +246,7 @@ int show_menu() {
     } else {
         printf(COLOR_GREEN "%s\n" RESET, opened_device);
         long available_space = MAX_SIZE_BYTES - read_param_field(TOTAL_BYTES_LOW_PATH, minor) - read_param_field(TOTAL_BYTES_HIGH_PATH, minor);
-        // printf("%s│%s%s Estimated Available Space:%s %ld bytes\n", COLOR_YELLOW, RESET, BOLD, RESET, available_space);
+        printf("%s│%s%s Estimated Available Space:%s %ld bytes\n", COLOR_YELLOW, RESET, BOLD, RESET, available_space);
         printf(COLOR_YELLOW "├───────────────────────────────────────────┤\n" RESET);
         printf("%s│ Session Priority:%s %s\n", COLOR_YELLOW, RESET, session_priority);
         printf("%s│ Session Blocking Type:%s %s\n", COLOR_YELLOW, RESET, session_blocking);
