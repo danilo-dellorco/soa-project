@@ -21,6 +21,9 @@ Mantiene tutti i parametri e le costanti utilizzate all'interno del device drive
 #define NUM_DEVICES 3  // TODO set to 128
 #define NUM_FLOWS 2    // TODO set to 128
 
+// #define MAX_SIZE_BYTES 1048576  // Massima dimensione di byte mantenibili da un singolo device (1MB)
+#define MAX_SIZE_BYTES 128  // Utilizzato per debugging e testing
+
 #define LOW_PRIORITY 0
 #define HIGH_PRIORITY 1
 

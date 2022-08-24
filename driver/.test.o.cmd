@@ -1,4 +1,4 @@
-cmd_/home/danilo/code/soa-project/driver/test.o := gcc -Wp,-MMD,/home/danilo/code/soa-project/driver/.test.o.d -nostdinc -I./arch/x86/include -I./arch/x86/include/generated  -I./include -I./arch/x86/include/uapi -I./arch/x86/include/generated/uapi -I./include/uapi -I./include/generated/uapi -include ./include/linux/compiler-version.h -include ./include/linux/kconfig.h -include ./include/linux/compiler_types.h -D__KERNEL__ -fmacro-prefix-map=./= -Wall -Wundef -Werror=strict-prototypes -Wno-trigraphs -fno-strict-aliasing -fno-common -fshort-wchar -fno-PIE -Werror=implicit-function-declaration -Werror=implicit-int -Werror=return-type -Wno-format-security -std=gnu11 -mno-sse -mno-mmx -mno-sse2 -mno-3dnow -mno-avx -fcf-protection=none -m64 -falign-jumps=1 -falign-loops=1 -mno-80387 -mno-fp-ret-in-387 -mpreferred-stack-boundary=3 -mskip-rax-setup -mtune=generic -mno-red-zone -mcmodel=kernel -Wno-sign-compare -fno-asynchronous-unwind-tables -mindirect-branch=thunk-extern -mindirect-branch-register -mindirect-branch-cs-prefix -fno-jump-tables -mharden-sls=all -fno-delete-null-pointer-checks -Wno-frame-address -Wno-format-truncation -Wno-format-overflow -Wno-address-of-packed-member -O2 -fno-allow-store-data-races -Wframe-larger-than=1024 -fstack-protector-strong -Wimplicit-fallthrough=5 -Wno-main -Wno-unused-but-set-variable -Wno-unused-const-variable -fno-omit-frame-pointer -fno-optimize-sibling-calls -fno-stack-clash-protection -pg -mrecord-mcount -mfentry -DCC_USING_FENTRY -Wdeclaration-after-statement -Wvla -Wno-pointer-sign -Wcast-function-type -Wno-stringop-truncation -Wno-stringop-overflow -Wno-restrict -Wno-maybe-uninitialized -Wno-alloc-size-larger-than -fno-strict-overflow -fno-stack-check -fconserve-stack -Werror=date-time -Werror=incompatible-pointer-types -Werror=designated-init -Wno-packed-not-aligned -g -gdwarf-5  -fsanitize=bounds -fsanitize=shift -fsanitize=bool -fsanitize=enum  -DMODULE  -DKBUILD_BASENAME='"test"' -DKBUILD_MODNAME='"test"' -D__KBUILD_MODNAME=kmod_test -c -o /home/danilo/code/soa-project/driver/test.o /home/danilo/code/soa-project/driver/test.c  ; ./tools/objtool/objtool check  --module     --retpoline  --uaccess   --sls /home/danilo/code/soa-project/driver/test.o
+cmd_/home/danilo/code/soa-project/driver/test.o := gcc -Wp,-MMD,/home/danilo/code/soa-project/driver/.test.o.d -nostdinc -I./arch/x86/include -I./arch/x86/include/generated  -I./include -I./arch/x86/include/uapi -I./arch/x86/include/generated/uapi -I./include/uapi -I./include/generated/uapi -include ./include/linux/compiler-version.h -include ./include/linux/kconfig.h -include ./include/linux/compiler_types.h -D__KERNEL__ -fmacro-prefix-map=./= -Wall -Wundef -Werror=strict-prototypes -Wno-trigraphs -fno-strict-aliasing -fno-common -fshort-wchar -fno-PIE -Werror=implicit-function-declaration -Werror=implicit-int -Werror=return-type -Wno-format-security -std=gnu11 -mno-sse -mno-mmx -mno-sse2 -mno-3dnow -mno-avx -fcf-protection=none -m64 -falign-jumps=1 -falign-loops=1 -mno-80387 -mno-fp-ret-in-387 -mpreferred-stack-boundary=3 -mskip-rax-setup -mtune=generic -mno-red-zone -mcmodel=kernel -Wno-sign-compare -fno-asynchronous-unwind-tables -mindirect-branch=thunk-extern -mindirect-branch-register -mindirect-branch-cs-prefix -mfunction-return=thunk-extern -fno-jump-tables -mharden-sls=all -fno-delete-null-pointer-checks -Wno-frame-address -Wno-format-truncation -Wno-format-overflow -Wno-address-of-packed-member -O2 -fno-allow-store-data-races -Wframe-larger-than=1024 -fstack-protector-strong -Wimplicit-fallthrough=5 -Wno-main -Wno-unused-but-set-variable -Wno-unused-const-variable -fno-omit-frame-pointer -fno-optimize-sibling-calls -fno-stack-clash-protection -pg -mrecord-mcount -mfentry -DCC_USING_FENTRY -Wdeclaration-after-statement -Wvla -Wno-pointer-sign -Wcast-function-type -Wno-stringop-truncation -Wno-stringop-overflow -Wno-restrict -Wno-maybe-uninitialized -Wno-alloc-size-larger-than -fno-strict-overflow -fno-stack-check -fconserve-stack -Werror=date-time -Werror=incompatible-pointer-types -Werror=designated-init -Wno-packed-not-aligned -g -gdwarf-5  -fsanitize=bounds -fsanitize=shift -fsanitize=bool -fsanitize=enum  -DMODULE  -DKBUILD_BASENAME='"test"' -DKBUILD_MODNAME='"test"' -D__KBUILD_MODNAME=kmod_test -c -o /home/danilo/code/soa-project/driver/test.o /home/danilo/code/soa-project/driver/test.c   ; ./tools/objtool/objtool  --hacks=jump_label  --hacks=noinstr     --retpoline  --rethunk  --sls  --stackval  --static-call  --uaccess   --module  /home/danilo/code/soa-project/driver/test.o
 
 source_/home/danilo/code/soa-project/driver/test.o := /home/danilo/code/soa-project/driver/test.c
 
@@ -50,7 +50,7 @@ deps_/home/danilo/code/soa-project/driver/test.o := \
   include/linux/compiler.h \
     $(wildcard include/config/TRACE_BRANCH_PROFILING) \
     $(wildcard include/config/PROFILE_ALL_BRANCHES) \
-    $(wildcard include/config/STACK_VALIDATION) \
+    $(wildcard include/config/OBJTOOL) \
     $(wildcard include/config/CFI_CLANG) \
   arch/x86/include/generated/asm/rwonce.h \
   include/asm-generic/rwonce.h \
@@ -95,6 +95,7 @@ deps_/home/danilo/code/soa-project/driver/test.o := \
     $(wildcard include/config/PAGE_OWNER) \
     $(wildcard include/config/EVENTFD) \
     $(wildcard include/config/IOMMU_SVA) \
+    $(wildcard include/config/CPU_SUP_INTEL) \
     $(wildcard include/config/STACKPROTECTOR) \
     $(wildcard include/config/ARCH_HAS_SCALED_CPUTIME) \
     $(wildcard include/config/VIRT_CPU_ACCOUNTING_GEN) \
@@ -146,6 +147,9 @@ deps_/home/danilo/code/soa-project/driver/test.o := \
     $(wildcard include/config/PREEMPT_DYNAMIC) \
     $(wildcard include/config/HAVE_PREEMPT_DYNAMIC_CALL) \
     $(wildcard include/config/HAVE_PREEMPT_DYNAMIC_KEY) \
+    $(wildcard include/config/PREEMPT_NONE) \
+    $(wildcard include/config/PREEMPT_VOLUNTARY) \
+    $(wildcard include/config/PREEMPT) \
     $(wildcard include/config/DEBUG_RSEQ) \
   include/uapi/linux/sched.h \
   arch/x86/include/asm/current.h \
@@ -168,12 +172,12 @@ deps_/home/danilo/code/soa-project/driver/test.o := \
   include/linux/stringify.h \
   include/linux/export.h \
     $(wildcard include/config/MODVERSIONS) \
-    $(wildcard include/config/MODULE_REL_CRCS) \
     $(wildcard include/config/HAVE_ARCH_PREL32_RELOCATIONS) \
     $(wildcard include/config/MODULES) \
     $(wildcard include/config/TRIM_UNUSED_KSYMS) \
   arch/x86/include/asm/linkage.h \
     $(wildcard include/config/X86_ALIGNMENT_16) \
+    $(wildcard include/config/RETHUNK) \
     $(wildcard include/config/SLS) \
   arch/x86/include/asm/ibt.h \
     $(wildcard include/config/X86_KERNEL_IBT) \
@@ -209,13 +213,14 @@ deps_/home/danilo/code/soa-project/driver/test.o := \
     $(wildcard include/config/MATOM) \
     $(wildcard include/config/PARAVIRT_XXL) \
   arch/x86/include/asm/disabled-features.h \
-    $(wildcard include/config/X86_SMAP) \
     $(wildcard include/config/X86_UMIP) \
     $(wildcard include/config/X86_INTEL_MEMORY_PROTECTION_KEYS) \
     $(wildcard include/config/X86_5LEVEL) \
     $(wildcard include/config/PAGE_TABLE_ISOLATION) \
+    $(wildcard include/config/CPU_UNRET_ENTRY) \
     $(wildcard include/config/INTEL_IOMMU_SVM) \
     $(wildcard include/config/X86_SGX) \
+    $(wildcard include/config/INTEL_TDX_GUEST) \
   include/asm-generic/bitops/const_hweight.h \
   include/asm-generic/bitops/instrumented-atomic.h \
   include/linux/instrumented.h \
@@ -252,12 +257,6 @@ deps_/home/danilo/code/soa-project/driver/test.o := \
     $(wildcard include/config/STRICT_MODULE_RWX) \
     $(wildcard include/config/LTO_CLANG) \
   include/linux/kern_levels.h \
-  include/linux/cache.h \
-    $(wildcard include/config/ARCH_HAS_CACHE_LINE_SIZE) \
-  arch/x86/include/asm/cache.h \
-    $(wildcard include/config/X86_L1_CACHE_SHIFT) \
-    $(wildcard include/config/X86_INTERNODE_CACHE_SHIFT) \
-    $(wildcard include/config/X86_VSMP) \
   include/linux/ratelimit_types.h \
   include/uapi/linux/param.h \
   arch/x86/include/generated/uapi/asm/param.h \
@@ -280,6 +279,7 @@ deps_/home/danilo/code/soa-project/driver/test.o := \
   include/linux/jump_label.h \
     $(wildcard include/config/HAVE_ARCH_JUMP_LABEL_RELATIVE) \
   arch/x86/include/asm/jump_label.h \
+    $(wildcard include/config/HAVE_JUMP_LABEL_HACK) \
   include/linux/static_call_types.h \
     $(wildcard include/config/HAVE_STATIC_CALL) \
     $(wildcard include/config/HAVE_STATIC_CALL_INLINE) \
@@ -326,7 +326,6 @@ deps_/home/danilo/code/soa-project/driver/test.o := \
     $(wildcard include/config/TRACE_IRQFLAGS_SUPPORT) \
   arch/x86/include/asm/irqflags.h \
     $(wildcard include/config/DEBUG_ENTRY) \
-    $(wildcard include/config/XEN_PV) \
   arch/x86/include/asm/processor-flags.h \
     $(wildcard include/config/VM86) \
   arch/x86/include/uapi/asm/processor-flags.h \
@@ -352,6 +351,7 @@ deps_/home/danilo/code/soa-project/driver/test.o := \
     $(wildcard include/config/X86) \
   include/uapi/video/edid.h \
   arch/x86/include/asm/nospec-branch.h \
+    $(wildcard include/config/CPU_IBPB_ENTRY) \
   include/linux/static_key.h \
   include/linux/objtool.h \
     $(wildcard include/config/FRAME_POINTER) \
@@ -360,6 +360,11 @@ deps_/home/danilo/code/soa-project/driver/test.o := \
   arch/x86/include/asm/orc_types.h \
   arch/x86/include/asm/GEN-for-each-reg.h \
   arch/x86/include/asm/segment.h \
+    $(wildcard include/config/XEN_PV) \
+  arch/x86/include/asm/cache.h \
+    $(wildcard include/config/X86_L1_CACHE_SHIFT) \
+    $(wildcard include/config/X86_INTERNODE_CACHE_SHIFT) \
+    $(wildcard include/config/X86_VSMP) \
   arch/x86/include/asm/paravirt.h \
     $(wildcard include/config/PARAVIRT) \
     $(wildcard include/config/PARAVIRT_SPINLOCKS) \
@@ -393,6 +398,7 @@ deps_/home/danilo/code/soa-project/driver/test.o := \
   arch/x86/include/asm/bug.h \
     $(wildcard include/config/DEBUG_BUGVERBOSE) \
   include/linux/instrumentation.h \
+    $(wildcard include/config/NOINSTR_VALIDATION) \
   include/asm-generic/bug.h \
     $(wildcard include/config/BUG) \
     $(wildcard include/config/GENERIC_BUG_RELATIVE_POINTERS) \
@@ -459,6 +465,7 @@ deps_/home/danilo/code/soa-project/driver/test.o := \
   arch/x86/include/asm/msr-index.h \
   arch/x86/include/asm/cpumask.h \
   arch/x86/include/uapi/asm/msr.h \
+  arch/x86/include/asm/shared/msr.h \
   include/linux/tracepoint-defs.h \
   arch/x86/include/asm/special_insns.h \
   arch/x86/include/asm/fpu/types.h \
@@ -466,6 +473,8 @@ deps_/home/danilo/code/soa-project/driver/test.o := \
   arch/x86/include/asm/vdso/processor.h \
   include/linux/personality.h \
   include/uapi/linux/personality.h \
+  include/linux/cache.h \
+    $(wildcard include/config/ARCH_HAS_CACHE_LINE_SIZE) \
   include/linux/bottom_half.h \
   include/linux/lockdep.h \
     $(wildcard include/config/DEBUG_LOCKING_API_SELFTESTS) \
@@ -491,7 +500,6 @@ deps_/home/danilo/code/soa-project/driver/test.o := \
   arch/x86/include/asm/qrwlock.h \
   include/asm-generic/qrwlock.h \
   include/linux/rwlock.h \
-    $(wildcard include/config/PREEMPT) \
   include/linux/spinlock_api_smp.h \
     $(wildcard include/config/INLINE_SPIN_LOCK) \
     $(wildcard include/config/INLINE_SPIN_LOCK_BH) \
@@ -544,7 +552,6 @@ deps_/home/danilo/code/soa-project/driver/test.o := \
     $(wildcard include/config/WQ_WATCHDOG) \
   include/linux/timer.h \
     $(wildcard include/config/DEBUG_OBJECTS_TIMERS) \
-    $(wildcard include/config/NO_HZ_COMMON) \
   include/linux/ktime.h \
   include/linux/time.h \
     $(wildcard include/config/POSIX_TIMERS) \
@@ -592,10 +599,6 @@ deps_/home/danilo/code/soa-project/driver/test.o := \
     $(wildcard include/config/DEBUG_VM) \
     $(wildcard include/config/DEBUG_VM_PGFLAGS) \
   include/linux/seqlock.h \
-  include/linux/ww_mutex.h \
-    $(wildcard include/config/DEBUG_RT_MUTEXES) \
-    $(wildcard include/config/DEBUG_WW_MUTEX_SLOWPATH) \
-  include/linux/rtmutex.h \
   include/linux/timerqueue.h \
   include/linux/seccomp.h \
     $(wildcard include/config/SECCOMP) \
@@ -722,6 +725,7 @@ deps_/home/danilo/code/soa-project/driver/test.o := \
     $(wildcard include/config/MEMBARRIER) \
     $(wildcard include/config/AIO) \
     $(wildcard include/config/MMU_NOTIFIER) \
+    $(wildcard include/config/KSM) \
   include/linux/auxvec.h \
   include/uapi/linux/auxvec.h \
   arch/x86/include/uapi/asm/auxvec.h \
@@ -749,21 +753,20 @@ deps_/home/danilo/code/soa-project/driver/test.o := \
     $(wildcard include/config/ARCH_USES_PG_UNCACHED) \
     $(wildcard include/config/MEMORY_FAILURE) \
     $(wildcard include/config/PAGE_IDLE_FLAG) \
-    $(wildcard include/config/HUGETLB_PAGE_FREE_VMEMMAP) \
-    $(wildcard include/config/HUGETLB_PAGE_FREE_VMEMMAP_DEFAULT_ON) \
-    $(wildcard include/config/KSM) \
+    $(wildcard include/config/HUGETLB_PAGE_OPTIMIZE_VMEMMAP) \
+    $(wildcard include/config/HUGETLB_PAGE_OPTIMIZE_VMEMMAP_DEFAULT_ON) \
   include/linux/local_lock.h \
   include/linux/local_lock_internal.h \
   include/linux/memory_hotplug.h \
     $(wildcard include/config/HAVE_ARCH_NODEDATA_EXTENSION) \
     $(wildcard include/config/ARCH_HAS_ADD_PAGES) \
     $(wildcard include/config/MEMORY_HOTREMOVE) \
+    $(wildcard include/config/MHP_MEMMAP_ON_MEMORY) \
   arch/x86/include/asm/mmzone.h \
   arch/x86/include/asm/mmzone_64.h \
   include/linux/topology.h \
     $(wildcard include/config/USE_PERCPU_NUMA_NODE_ID) \
     $(wildcard include/config/SCHED_SMT) \
-    $(wildcard include/config/SCHED_CLUSTER) \
   include/linux/arch_topology.h \
     $(wildcard include/config/ACPI_CPPC_LIB) \
     $(wildcard include/config/GENERIC_ARCH_TOPOLOGY) \
@@ -803,6 +806,7 @@ deps_/home/danilo/code/soa-project/driver/test.o := \
     $(wildcard include/config/ARCH_WANTS_DYNAMIC_TASK_STRUCT) \
     $(wildcard include/config/HAVE_ARCH_THREAD_STRUCT_WHITELIST) \
   include/linux/uaccess.h \
+    $(wildcard include/config/ARCH_HAS_SUBPAGE_FAULTS) \
   include/linux/fault-inject-usercopy.h \
     $(wildcard include/config/FAULT_INJECTION_USERCOPY) \
   arch/x86/include/asm/uaccess.h \
@@ -870,6 +874,7 @@ deps_/home/danilo/code/soa-project/driver/test.o := \
     $(wildcard include/config/MODULES_TREE_LOOKUP) \
     $(wildcard include/config/STACKTRACE_BUILD_ID) \
     $(wildcard include/config/MODULE_SIG) \
+    $(wildcard include/config/ARCH_WANTS_MODULES_DATA_IN_VMALLOC) \
     $(wildcard include/config/KALLSYMS) \
     $(wildcard include/config/BPF_EVENTS) \
     $(wildcard include/config/DEBUG_INFO_BTF_MODULES) \
@@ -925,6 +930,7 @@ deps_/home/danilo/code/soa-project/driver/test.o := \
   include/uapi/asm-generic/termios.h \
   arch/x86/include/generated/uapi/asm/termbits.h \
   include/uapi/asm-generic/termbits.h \
+  include/uapi/asm-generic/termbits-common.h \
   arch/x86/include/generated/uapi/asm/ioctls.h \
   include/uapi/asm-generic/ioctls.h \
   include/linux/tty_buffer.h \
@@ -953,6 +959,7 @@ deps_/home/danilo/code/soa-project/driver/test.o := \
     $(wildcard include/config/CPU_FREQ) \
   include/linux/sched/topology.h \
     $(wildcard include/config/SCHED_DEBUG) \
+    $(wildcard include/config/SCHED_CLUSTER) \
     $(wildcard include/config/SCHED_MC) \
     $(wildcard include/config/CPU_FREQ_GOV_SCHEDUTIL) \
   include/linux/sched/idle.h \
@@ -961,6 +968,7 @@ deps_/home/danilo/code/soa-project/driver/test.o := \
   include/linux/klist.h \
   include/linux/pm.h \
     $(wildcard include/config/VT_CONSOLE_SLEEP) \
+    $(wildcard include/config/CXL_SUSPEND) \
     $(wildcard include/config/PM) \
     $(wildcard include/config/PM_CLK) \
     $(wildcard include/config/PM_GENERIC_DOMAINS) \
@@ -1011,7 +1019,7 @@ deps_/home/danilo/code/soa-project/driver/test.o := \
     $(wildcard include/config/STACKTRACE) \
     $(wildcard include/config/HAVE_RELIABLE_STACKTRACE) \
   include/linux/stackdepot.h \
-    $(wildcard include/config/STACKDEPOT_ALWAYS_INIT) \
+    $(wildcard include/config/STACKDEPOT) \
   include/linux/page_ref.h \
     $(wildcard include/config/DEBUG_PAGE_REF) \
   include/linux/sizes.h \
@@ -1052,12 +1060,14 @@ deps_/home/danilo/code/soa-project/driver/test.o := \
   include/linux/vm_event_item.h \
     $(wildcard include/config/MEMORY_BALLOON) \
     $(wildcard include/config/BALLOON_COMPACTION) \
+    $(wildcard include/config/ZSWAP) \
   arch/x86/include/asm/io.h \
     $(wildcard include/config/MTRR) \
     $(wildcard include/config/X86_PAT) \
   arch/x86/include/generated/asm/early_ioremap.h \
   include/asm-generic/early_ioremap.h \
     $(wildcard include/config/GENERIC_EARLY_IOREMAP) \
+  arch/x86/include/asm/shared/io.h \
   include/asm-generic/iomap.h \
     $(wildcard include/config/HAS_IOPORT_MAP) \
   include/asm-generic/pci_iomap.h \
@@ -1068,7 +1078,6 @@ deps_/home/danilo/code/soa-project/driver/test.o := \
     $(wildcard include/config/GENERIC_IOMAP) \
     $(wildcard include/config/GENERIC_IOREMAP) \
     $(wildcard include/config/VIRT_TO_BUS) \
-    $(wildcard include/config/GENERIC_DEVMEM_IS_ALLOWED) \
   include/linux/logic_pio.h \
     $(wildcard include/config/INDIRECT_PIO) \
   include/linux/fwnode.h \

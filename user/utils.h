@@ -17,30 +17,35 @@
 #define WAITING_THREADS_HIGH_PATH "/sys/module/test/parameters/waiting_threads_high"
 #define WAITING_THREADS_LOW_PATH "/sys/module/test/parameters/waiting_threads_low"
 
+#define LOW_PRIORITY "Low"
+#define HIGH_PRIORITY "High"
+
+#define NON_BLOCKING "Non-Blocking"
+#define BLOCKING "Blocking"
 /**
  * Lista di comandi utilizzabili
  */
 char* main_menu_list[] = {
-    "\x1B[1m--------- OPERATIONS ---------\x1B[0m",
-    "\x1B[1m0)\x1B[0m  Open a device file",
-    "\x1B[1m1)\x1B[0m  Write on the device file",
-    "\x1B[1m2)\x1B[0m  Read from the device file",
+    "\x1B[1m------------- OPERATIONS -------------\x1B[0m",
+    "\x1B[1m    0)\x1B[0m  Open a device file",
+    "\x1B[1m    1)\x1B[0m  Write on the device file",
+    "\x1B[1m    2)\x1B[0m  Read from the device file",
     "",
-    "\x1B[1m------ SESSION SETTINGS ------\x1B[0m",
-    "\x1B[1m3)\x1B[0m  Switch to LOW priority",
-    "\x1B[1m4)\x1B[0m  Switch to HIGH priority",
-    "\x1B[1m5)\x1B[0m  Use BLOCKING operations",
-    "\x1B[1m6)\x1B[0m  Use NON-BLOCKING operations",
-    "\x1B[1m7)\x1B[0m  Set timeout",
+    "\x1B[1m---------- SESSION SETTINGS ----------\x1B[0m",
+    "\x1B[1m    3)\x1B[0m  Switch to LOW priority",
+    "\x1B[1m    4)\x1B[0m  Switch to HIGH priority",
+    "\x1B[1m    5)\x1B[0m  Use BLOCKING operations",
+    "\x1B[1m    6)\x1B[0m  Use NON-BLOCKING operations",
+    "\x1B[1m    7)\x1B[0m  Set timeout",
     "",
-    "\x1B[1m------ DEVICE MANAGEMENT ------\x1B[0m",
-    "\x1B[1m8)\x1B[0m  Enable a device file",
-    "\x1B[1m9)\x1B[0m  Disable a device file",
-    "\x1B[1m10)\x1B[0m See device status",
-    "\x1B[1m11)\x1B[0m Create device nodes",
+    "\x1B[1m---------- DEVICE MANAGEMENT ----------\x1B[0m",
+    "\x1B[1m    8)\x1B[0m  Enable a device file",
+    "\x1B[1m    9)\x1B[0m  Disable a device file",
+    "\x1B[1m    10)\x1B[0m See device status",
     "",
-    "\x1B[1m-------------------------------\x1B[0m",
-    "-1) Exit",
+    "\x1B[1m---------------------------------------\x1B[0m",
+    "\x1B[1m    11)\x1B[0m Create device nodes",
+    "\x1B[1m    -1)\x1B[0m Exit",
 };
 
 /**

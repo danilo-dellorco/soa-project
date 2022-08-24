@@ -19,6 +19,10 @@ char opened_device[64] = "none";
 int opened_major = 0;
 int device_fd = -1;
 
+char* session_priority = HIGH_PRIORITY;
+char* session_blocking = NON_BLOCKING;
+int session_timeout = 0;
+
 int menu_size = sizeof(main_menu_list) / sizeof(char*);
 
 /**
@@ -67,20 +71,34 @@ int main(int argc, char** argv) {
                 wait_input();
                 break;
             case (3):
+                session_priority = LOW_PRIORITY;
+                setup_session(cmd);
+                wait_input();
+                break;
             case (4):
+                session_priority = HIGH_PRIORITY;
+                setup_session(cmd);
+                wait_input();
+                break;
             case (5):
+                session_blocking = BLOCKING;
+                setup_session(cmd);
+                wait_input();
+                break;
             case (6):
+                session_blocking = NON_BLOCKING;
+                setup_session(cmd);
+                wait_input();
+                break;
             case (7):
                 setup_session(cmd);
                 wait_input();
                 break;
             case (8):
                 set_device_enabling(1);
-                wait_input();
                 break;
             case (9):
                 set_device_enabling(0);
-                wait_input();
                 break;
             case (10):
                 show_device_status();
@@ -113,22 +131,31 @@ int open_device() {
         printf("Insert a valid minor, between 0 and 127");
         return (-1);
     }
+    int old_minor = minor;
     minor = atoi(data_buff);
     clear_buffer();
 
+    // Se è aperto un altro dispositivo lo chiudo prima di aprire quello nuovo. Ogni client può mantenere un solo dispositivo aperto per volta.
     if (device_fd != -1) {
-        printf("Device %s is already opened.\n", opened_device);
-        return 0;
+        if (old_minor == minor) {
+            printf("Device %s is already opened.\n", opened_device);
+            return 0;
+        }
+        printf("There is an opened device %s. Closing it.\n", opened_device);
+        close(device_fd);
+        sprintf(opened_device, "none");
+        device_fd = -1;
     }
 
     sprintf(opened_device, "%s%d", device_path, minor);
-    printf("Opening device %s\n", opened_device);
     device_fd = open(opened_device, O_RDWR);
     if (device_fd == -1) {
         if (read_param_field(DEVICE_ENABLING_PATH, minor) == 0) {
             printf("%sThe device %s is actually disabled. Enable it before opening %s\n", COLOR_RED, opened_device, RESET);
-            sprintf(opened_device, "none");
-            return -1;
+        } else if (errno == EPERM) {
+            printf(COLOR_RED "Open error, invalid permissions on device %s.\n", opened_device);
+        } else if (errno == ENOENT) {
+            printf(COLOR_RED "Open error, device %s does not exists.\n", opened_device);
         }
         printf(COLOR_RED "Open error on device %s, use 'dmesg' for details.\n", opened_device);
         sprintf(opened_device, "none");
@@ -205,6 +232,8 @@ int read_op() {
 /**
  * Mostra il menu con i possibili comandi utente
  */
+
+// TODO mettere blocking/non blocking tra le info
 int show_menu() {
     system("clear");
     printf(COLOR_YELLOW "      ╔═══════════════════════════════╗\n" RESET);
@@ -217,10 +246,18 @@ int show_menu() {
     } else {
         printf(COLOR_GREEN "%s\n" RESET, opened_device);
         printf(COLOR_YELLOW "├───────────────────────────────────────────┤\n" RESET);
-        printf("│ %sHigh Priority Bytes:%s %d\n", BOLD, RESET, read_param_field(TOTAL_BYTES_HIGH_PATH, minor));
-        printf("│ %sLow Priority Bytes:%s %d\n", BOLD, RESET, read_param_field(TOTAL_BYTES_LOW_PATH, minor));
-        printf("│ %sHigh Priority Waiting Threads:%s %d\n", BOLD, RESET, read_param_field(WAITING_THREADS_HIGH_PATH, minor));
-        printf("│ %sLow Priority Waiting Threads:%s %d\n", BOLD, RESET, read_param_field(WAITING_THREADS_LOW_PATH, minor));
+        printf("%s│ Session Priority:%s %s\n", COLOR_YELLOW, RESET, session_priority);
+        printf("%s│ Session Blocking Type:%s %s\n", COLOR_YELLOW, RESET, session_blocking);
+        if (strcmp(session_priority, LOW_PRIORITY) == 0) {
+            printf("%s│ Total Bytes to Read:%s %d\n", COLOR_YELLOW, RESET, read_param_field(TOTAL_BYTES_LOW_PATH, minor));
+            printf("%s│ Number of Waiting Threads:%s %d\n", COLOR_YELLOW, RESET, read_param_field(WAITING_THREADS_LOW_PATH, minor));
+        } else {
+            printf("%s│ Total Bytes to Read:%s %d\n", COLOR_YELLOW, RESET, read_param_field(TOTAL_BYTES_HIGH_PATH, minor));
+            printf("%s│ Number of Waiting Threads:%s %d\n", COLOR_YELLOW, RESET, read_param_field(WAITING_THREADS_HIGH_PATH, minor));
+        }
+        if (strcmp(session_blocking, BLOCKING) == 0) {
+            printf("%s│ Blocking Timeout:%s %d ms\n", COLOR_YELLOW, RESET, session_timeout);
+        }
     }
     printf(COLOR_YELLOW "├───────────────────────────────────────────┤\n" RESET);
 
@@ -242,30 +279,21 @@ int show_menu() {
  */
 int create_nodes() {
     printf("Creating %d minors for device %s with major %d\n", NUM_DEVICES, device_path, major);
-
-    delete_nodes();
+    char the_dev[128];
+    int n = 0;
     for (i = 0; i < NUM_DEVICES; i++) {
-        sprintf(data_buff, "mknod %s%d c %d %i\n", device_path, i, major, i);
-        system(data_buff);
-        sprintf(data_buff, "%s%d", device_path, i);
+        sprintf(the_dev, "%s%d", device_path, i);
+        if (access(the_dev, F_OK) != 0) {
+            sprintf(data_buff, "mknod %s c %d %i\n", the_dev, major, i);
+            system(data_buff);
+            sprintf(data_buff, "%s%d", device_path, i);
+            n++;
+        } else {
+            printf("Device %s already exists. Skipping creation.\n", the_dev);
+        }
     }
-    printf(COLOR_GREEN "Device files succesfully created.\n" RESET);
+    printf(COLOR_GREEN "Succesfully created %d device files.\n" RESET, n);
     return 0;
-}
-
-/**
- * Elimina tutti i nodi test-dev attualmente presenti in /dev
- */
-int delete_nodes() {
-    int minors;
-    clear_buffer();
-    sprintf(data_buff, "rm %s*\n", device_path);
-    if (device_fd != -1) {
-        sprintf(opened_device, "none");
-        device_fd = -1;
-        close(device_fd);
-    }
-    system(data_buff);
 }
 
 /**
@@ -377,13 +405,17 @@ int setup_session(int op) {
         return -1;
     }
     printf(COLOR_GREEN "Session settings correctly changed\n" RESET);
+    session_timeout = timeout;
+    return 0;
 }
 
 /**
  * Chiude il programma liberando tutte le risorse
  */
 int exit_op() {
-    // TODO aggiungere sblocco mutex rilascio risorse e quant'altro
+    if (device_fd != -1) {
+        close(device_fd);
+    }
     printf(COLOR_CYAN "Goodbye.\n" RESET);
     exit(0);
 }

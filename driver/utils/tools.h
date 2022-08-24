@@ -5,7 +5,6 @@
 Funzioni e macro ausiliarie utilizzate nel device driver
 =====================================================================================================
 */
-// TODO problema con due thread high priority e quello bloccante muore invece di aspettare
 
 #include "params.h"
 
@@ -61,6 +60,10 @@ int try_mutex_lock(object_state *the_object, session_state *session, int minor, 
     wq = &the_object->wait_queue;
 
     // Una scrittura low priority non può fallire, quindi il processo attende attivamente di ottenere il lock.
+    //  - Anche se non-bloccante, devo notificare in modo sincrono il risultato della write al client.
+    //  - Quindi si cerca di prendere il lock solo quando viene schedulato il lavoro deferred.
+    //  - Non è possibile prevedere se il lock verrà preso e quindi se la scrittura verrà effettuata.
+    //  - Si assume che nessuna scrittura low priority possa fallire.
     if (session->priority == LOW_PRIORITY && op == WRITE_OP) {
         printk("%s: try_mutex_lock | Low Priority - Process %d waiting to get lock.\n", MODNAME, current->pid);
         __sync_fetch_and_add(&waiting_threads_low[minor], 1);  // Necessario per evitare out-of-order
@@ -70,7 +73,7 @@ int try_mutex_lock(object_state *the_object, session_state *session, int minor, 
         return 0;
     }
 
-    // Operazioni HIGH_PRIORITY
+    // Operazioni HIGH_PRIORITY, si effettua il trylock
     lock = mutex_trylock(&(the_object->operation_synchronizer));
 
     if (lock == 0) {
@@ -84,7 +87,6 @@ int try_mutex_lock(object_state *the_object, session_state *session, int minor, 
 
             // Sessione bloccante, ma lock non acquisito a timeout scaduto
             if (ret == 0) {
-                // printk("%s: Timeout expired, lock not acquired.\n", MODNAME);
                 return -1;
             }
         }
