@@ -191,11 +191,14 @@ int write_op() {
     data_buff[strcspn(data_buff, "\n")] = 0;  // ignoring \n
 
     res = write(device_fd, data_buff, min(strlen(data_buff), 4096));
-    if (res <= 0) {
-        printf(COLOR_RED "\nWrite result: could not write in the buffer \n" RESET);
+    if (res == NOT_ENOUGH_SPACE) {
+        printf(COLOR_RED "\nWrite failed, there is not enough space on the device.\n" RESET);
+    } else if (res == LOCK_NOT_ACQUIRED) {
+        printf(COLOR_RED "\nWrite failed, the device it's actually locked by another process.\n" RESET);
     } else {
-        printf("\n%sWrite result (%d bytes): operation completed successfully%s\n", COLOR_GREEN, res, RESET);
+        printf("\n%sWrite success, written '%d bytes' on the device.%s\n", COLOR_GREEN, res, RESET);
     }
+    return res;
 }
 
 /**

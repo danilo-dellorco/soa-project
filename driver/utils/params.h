@@ -41,6 +41,9 @@ Mantiene tutti i parametri e le costanti utilizzate all'interno del device drive
 
 #define TEST_TIME 15000  // Tempo di attesa prima di rilasciare il lock nella fase di testing
 
+#define NOT_ENOUGH_SPACE -1
+#define LOCK_NOT_ACQUIRED -2
+
 /**
  *  Parametri del modulo
  */

@@ -38,7 +38,7 @@ static int Minor;
  * Definiamo quindi 128 differenti strutture object_state mantenute nell'array objects.
  * Per ogni device ci sono 2 strutture object_state, per ognuno dei due flussi di priorità
  **/
-object_state objects[NUM_DEVICES][NUM_FLOWS];
+object_state objects[NUM_DEVICES];
 
 /*
  * Invocata dal VFS quando apriamo il nodo associato al driver.
@@ -99,8 +99,13 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
     ssize_t written_bytes = 0;
 
     object_state *the_object;
-    the_object = &objects[Minor][priority];
-    printk("%s: somebody called a %s %s write of %ld bytes on dev [%d,%d]\n", MODNAME, get_prio_str(priority), get_block_str(blocking), len, Major, Minor);
+    the_object = &objects[Minor];
+    printk("%s: somebody called a %s %s write of %ld bytes on dev [%d,%d] | Free Space: %ld\n", MODNAME, get_prio_str(priority), get_block_str(blocking), len, Major, Minor, the_object->available_bytes);
+
+    if (len > the_object->available_bytes) {
+        printk("%s: error, there is no enough space on dev [%d,%d].\n", MODNAME, Major, Minor);
+        return NOT_ENOUGH_SPACE;
+    }
 
     if (priority == LOW_PRIORITY) {
         written_bytes = write_low(buff, len, session, the_object);
@@ -110,7 +115,7 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
         written_bytes = write_on_stream(buff, len, session, the_object);
         total_bytes_high[Minor] += written_bytes;
     }
-
+    the_object->available_bytes -= written_bytes;
     return written_bytes;
 }
 
@@ -130,6 +135,7 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off) 
     int bytes_read;
     int old_id;
     object_state *the_object;
+    flow_state *the_flow;
     stream_block *current_block;
     stream_block *completed_block;
     session_state *session = filp->private_data;
@@ -139,22 +145,24 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off) 
 
     cls = clear_user(buff, len);
 
-    the_object = &objects[Minor][priority];
+    the_object = &objects[Minor];
+    the_flow = &the_object->priority_flow[priority];
+
     printk("%s: somebody called a %s %s read of %ld bytes on dev [%d,%d]\n", MODNAME, get_prio_str(priority), get_block_str(blocking), len, Major, Minor);
 
-    ret = try_mutex_lock(the_object, session, Minor, READ_OP);
+    ret = try_mutex_lock(the_flow, session, Minor, READ_OP);
     if (ret < 0) {
-        return -EAGAIN;
+        return -LOCK_NOT_ACQUIRED;
     }
 
-    current_block = the_object->head;
+    current_block = the_flow->head;
     printk("%s: start reading from head - block%d \n", MODNAME, current_block->id);
 
     // Non sono presenti dati nello stream
     if (current_block->stream_content == NULL) {
         printk("%s: No data to read in current block\n", MODNAME);
-        mutex_unlock(&(the_object->operation_synchronizer));
-        wake_up(&the_object->wait_queue);
+        mutex_unlock(&(the_flow->operation_synchronizer));
+        wake_up(&the_flow->wait_queue);
         return 0;
     }
 
@@ -178,9 +186,9 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off) 
             old_id = current_block->id;
             completed_block = current_block;
             current_block = current_block->next;
-            the_object->head = current_block;
+            the_flow->head = current_block;
 
-            printk("--- head | %d -> %d ", old_id, the_object->head->id);
+            printk("--- head | %d -> %d ", old_id, the_flow->head->id);
 
             // Sono stati letti tutti i dati dal blocco precedente, quindi posso liberare la rispettiva area di memoria.
             kfree(completed_block->stream_content);
@@ -196,10 +204,11 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off) 
                     total_bytes_low[Minor] -= bytes_read;
                 }
                 printk("%s: read completed (1), read %d bytes\n", MODNAME, bytes_read);
-                the_object->head = current_block;
-                the_object->tail = current_block;
-                mutex_unlock(&(the_object->operation_synchronizer));
-                wake_up(&the_object->wait_queue);
+                the_flow->head = current_block;
+                the_flow->tail = current_block;
+                mutex_unlock(&(the_flow->operation_synchronizer));
+                wake_up(&the_flow->wait_queue);
+                the_object->available_bytes += bytes_read;
                 return bytes_read;
             }
         }
@@ -216,8 +225,9 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off) 
                 total_bytes_low[Minor] -= bytes_read;
             }
             printk("%s: read completed (2), read %d bytes\n", MODNAME, bytes_read);
-            mutex_unlock(&(the_object->operation_synchronizer));
-            wake_up(&the_object->wait_queue);
+            mutex_unlock(&(the_flow->operation_synchronizer));
+            wake_up(&the_flow->wait_queue);
+            the_object->available_bytes += bytes_read;
             return bytes_read;
         }
     }
@@ -308,22 +318,25 @@ int init_module(void) {
     int i, j;
     for (i = 0; i < NUM_DEVICES; i++) {
         for (j = 0; j < NUM_FLOWS; j++) {
-            mutex_init(&(objects[i][j].operation_synchronizer));
+            flow_state *object_flow = &objects[i].priority_flow[j];
+
+            mutex_init(&(object_flow->operation_synchronizer));
 
             // Allocazione per il primo blocco di stream
-            objects[i][j].head = kzalloc(sizeof(stream_block), GFP_KERNEL);
-            objects[i][j].head->id = 0;
-            objects[i][j].tail = objects[i][j].head;
-            objects[i][j].head->next = NULL;
-            objects[i][j].head->stream_content = NULL;
-            objects[i][j].head->read_offset = 0;
+            object_flow->head = kzalloc(sizeof(stream_block), GFP_KERNEL);
+            object_flow->head->id = 0;
+            object_flow->tail = object_flow->head;
+            object_flow->head->next = NULL;
+            object_flow->head->stream_content = NULL;
+            object_flow->head->read_offset = 0;
 
             // Di default tutti i dispositivi sono abilitati
-            init_waitqueue_head(&objects[i][j].wait_queue);
+            init_waitqueue_head(&object_flow->wait_queue);
 
-            if (objects[i][j].head == NULL) goto revert_allocation;
+            if (object_flow->head == NULL) goto revert_allocation;
         }
         device_enabling[i] = ENABLED;
+        objects[i].available_bytes = MAX_SIZE_BYTES;
     }
 
     Major = __register_chrdev(0, 0, 128, DEVICE_NAME, &fops);
@@ -340,7 +353,7 @@ int init_module(void) {
 revert_allocation:
     printk(KERN_INFO "revert allocation\n");
     for (; i >= 0; i--) {
-        kfree(objects[i][j].head);
+        kfree(&objects[i].priority_flow[j]);
     }
     return -ENOMEM;
 }
@@ -360,9 +373,13 @@ void cleanup_module(void) {
 ssize_t write_on_stream(const char *buff, size_t len, session_state *session, object_state *the_object) {
     stream_block *current_block;
     stream_block *empty_block;
+    flow_state *the_flow;
 
     char *block_buff;
     int ret;
+    int priority = session->priority;
+
+    the_flow = &the_object->priority_flow[priority];
 
     // Blocco vuoto per la scrittura successiva. E' il blocco successivo a quello attualmente scritto
     empty_block = kzalloc(sizeof(stream_block), GFP_ATOMIC);
@@ -372,9 +389,9 @@ ssize_t write_on_stream(const char *buff, size_t len, session_state *session, ob
     empty_block->stream_content = NULL;
 
     printk("%s: stream write | to_write: %ld bytes\n", MODNAME, len);
-    ret = try_mutex_lock(the_object, session, Minor, WRITE_OP);
+    ret = try_mutex_lock(the_flow, session, Minor, WRITE_OP);
     if (ret < 0) {
-        return -EAGAIN;
+        return LOCK_NOT_ACQUIRED;
     }
 
     if (session->priority == HIGH_PRIORITY) {
@@ -383,19 +400,19 @@ ssize_t write_on_stream(const char *buff, size_t len, session_state *session, ob
         block_buff = (char *)buff;
         ret = 0;
     }
-    current_block = the_object->tail;
+    current_block = the_flow->tail;
     empty_block->id = current_block->id + 1;
 
     current_block->stream_content = block_buff;
     current_block->next = empty_block;
-    the_object->tail = empty_block;
+    the_flow->tail = empty_block;
 
 #ifdef TEST
     printk("%s: [TEST] waiting %d msec to release write lock\n", MODNAME, TEST_TIME);
     msleep(30000);
 #endif
-    mutex_unlock(&(the_object->operation_synchronizer));
-    wake_up(&the_object->wait_queue);
+    mutex_unlock(&(the_flow->operation_synchronizer));
+    wake_up(&the_flow->wait_queue);
     printk("%s: lock released, ret = %ld\n", MODNAME, len - ret);
     printk("%s: written %ld bytes in block %d: '%s'\n", MODNAME, strlen(current_block->stream_content), current_block->id, current_block->stream_content);
     return len - ret;
@@ -450,7 +467,7 @@ void write_deferred(struct work_struct *deferred_work) {
     packed_work_struct *packed = container_of(deferred_work, packed_work_struct, work);
     int minor = packed->minor;
     session_state *session = packed->session;
-    object_state *the_object = &objects[minor][LOW_PRIORITY];
+    object_state *the_object = &objects[minor];
     size_t len = packed->len;
 
     buff = packed->data;

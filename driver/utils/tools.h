@@ -53,28 +53,29 @@ int put_to_waitqueue(unsigned long timeout, struct mutex *mutex, wait_queue_head
  * Se l'operazione è bloccante ed il lock non viene acquisito, il task viene messo nella waitqueue.
  * Ritorna 0 se il lock viene acquisito correttamente, -1 se il lock non viene acquisito allo scadere del timeout, -2 se il lock non viene acquisito in una operazione non-bloccante.
  */
-int try_mutex_lock(object_state *the_object, session_state *session, int minor, int op) {
+int try_mutex_lock(flow_state *the_flow, session_state *session, int minor, int op) {
     int lock;
     int ret;
     wait_queue_head_t *wq;
-    wq = &the_object->wait_queue;
+    int priority = session->priority;
+    wq = &the_flow->wait_queue;
 
     // Una scrittura low priority non può fallire, quindi il processo attende attivamente di ottenere il lock.
     //  - Anche se non-bloccante, devo notificare in modo sincrono il risultato della write al client.
     //  - Quindi si cerca di prendere il lock solo quando viene schedulato il lavoro deferred.
     //  - Non è possibile prevedere se il lock verrà preso e quindi se la scrittura verrà effettuata.
     //  - Si assume che nessuna scrittura low priority possa fallire.
-    if (session->priority == LOW_PRIORITY && op == WRITE_OP) {
+    if (priority == LOW_PRIORITY && op == WRITE_OP) {
         printk("%s: try_mutex_lock | Low Priority - Process %d waiting to get lock.\n", MODNAME, current->pid);
         __sync_fetch_and_add(&waiting_threads_low[minor], 1);  // Necessario per evitare out-of-order
-        mutex_lock(&(the_object->operation_synchronizer));
+        mutex_lock(&(the_flow->operation_synchronizer));
         __sync_fetch_and_add(&waiting_threads_low[minor], -1);
         printk("%s: try_mutex_lock | Low Priority - Process %d acquired lock.\n", MODNAME, current->pid);
         return 0;
     }
 
     // Operazioni HIGH_PRIORITY, si effettua il trylock
-    lock = mutex_trylock(&(the_object->operation_synchronizer));
+    lock = mutex_trylock(&(the_flow->operation_synchronizer));
 
     if (lock == 0) {
         printk("%s: Unable to get lock.\n", MODNAME);
@@ -82,7 +83,7 @@ int try_mutex_lock(object_state *the_object, session_state *session, int minor, 
             printk("%s: Attempt to get lock. Timeout of %d ms\n", MODNAME, session->timeout);
 
             waiting_threads_high[minor]++;
-            ret = put_to_waitqueue(session->timeout, &the_object->operation_synchronizer, wq);
+            ret = put_to_waitqueue(session->timeout, &the_flow->operation_synchronizer, wq);
             waiting_threads_high[minor]--;
 
             // Sessione bloccante, ma lock non acquisito a timeout scaduto

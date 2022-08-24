@@ -21,13 +21,21 @@ typedef struct _stream_block {
 } stream_block;
 
 /**
- * Mantinene lo stato del device
+ * Mantinene tutte le informazioni sul singolo flusso di priorità
  */
-typedef struct _object_state {
+typedef struct _flow_state {
     struct mutex operation_synchronizer;  // Lock sullo specifico device, per sincronizzare l'accesso di thread concorrenti
     stream_block *head;                   // Puntatore al primo blocco dati dello stream
     stream_block *tail;                   // Puntatore all' ultimo blocco dati dello stream. Permette di appendere più velocemente un nuovo stream block.
     wait_queue_head_t wait_queue;         // Wait Event Queue, mantiene i task bloccanti messi in sleep.
+} flow_state;
+
+/**
+ * Mantinene lo stato del device
+ */
+typedef struct _object_state {
+    long available_bytes;                 // Mantiene lo spazio libero totale del dispositivo, a prescindere dai due flussi.
+    flow_state priority_flow[NUM_FLOWS];  // Mantiene lo stato complessivo del flusso ad alta e bassa priorità
 } object_state;
 
 /**

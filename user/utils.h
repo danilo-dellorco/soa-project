@@ -22,6 +22,11 @@
 
 #define NON_BLOCKING "Non-Blocking"
 #define BLOCKING "Blocking"
+
+// Codici di errore
+#define NOT_ENOUGH_SPACE -1
+#define LOCK_NOT_ACQUIRED -2
+
 /**
  * Lista di comandi utilizzabili
  */
