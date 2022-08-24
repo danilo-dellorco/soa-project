@@ -100,22 +100,26 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
 
     object_state *the_object;
     the_object = &objects[Minor];
-    printk("%s: somebody called a %s %s write of %ld bytes on dev [%d,%d] | Free Space: %ld\n", MODNAME, get_prio_str(priority), get_block_str(blocking), len, Major, Minor, the_object->available_bytes);
+    printk("%s: Called a %s %s write of %ld bytes on dev [%d,%d] | Free Space: %ld bytes\n", MODNAME, get_prio_str(priority), get_block_str(blocking), len, Major, Minor, the_object->available_bytes);
 
-    if (len > the_object->available_bytes) {
-        printk("%s: error, there is no enough space on dev [%d,%d].\n", MODNAME, Major, Minor);
-        return NOT_ENOUGH_SPACE;
-    }
-
+    // A bassa priorità vedo subito se ho spazio disponibile, tolgo subito i bytes che verranno letti dal totale libero
+    // e poi schedulo la scrittura deferred. Il risultato viene notificato subito quindi se c'è spazio disponibile la scrittura non fallirà mai.
+    // Il numero di bytes leggibili dal flusso viene invece incrementato solo quando avviene effettivamente la scrittura, perché altrimenti
+    // la read può essere eseguita anche se non ci sono bytes scritti.
     if (priority == LOW_PRIORITY) {
+        if (len > the_object->available_bytes) {
+            printk("%s: error, there is no enough space on dev [%d,%d].\n", MODNAME, Major, Minor);
+            return WRITE_ERROR;
+        }
+        the_object->available_bytes -= written_bytes;
         written_bytes = write_low(buff, len, session, the_object);
-        total_bytes_low[Minor] += written_bytes;
-
-    } else if (priority == HIGH_PRIORITY) {
-        written_bytes = write_on_stream(buff, len, session, the_object);
-        total_bytes_high[Minor] += written_bytes;
     }
-    the_object->available_bytes -= written_bytes;
+
+    // Ad alta priorità i controlli vengono effettuati al momento della write, che può fallire per lo spazio libero o per lock busy.
+    else if (priority == HIGH_PRIORITY) {
+        written_bytes = write_on_stream(buff, len, session, the_object);
+        the_object->available_bytes -= written_bytes;
+    }
     return written_bytes;
 }
 
@@ -152,7 +156,8 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off) 
 
     ret = try_mutex_lock(the_flow, session, Minor, READ_OP);
     if (ret < 0) {
-        return -LOCK_NOT_ACQUIRED;
+        printk("ret - %d\n", ret);
+        return READ_ERROR;
     }
 
     current_block = the_flow->head;
@@ -163,7 +168,7 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off) 
         printk("%s: No data to read in current block\n", MODNAME);
         mutex_unlock(&(the_flow->operation_synchronizer));
         wake_up(&the_flow->wait_queue);
-        return 0;
+        return READ_ERROR;
     }
 
     to_read = len;
@@ -389,9 +394,13 @@ ssize_t write_on_stream(const char *buff, size_t len, session_state *session, ob
     empty_block->stream_content = NULL;
 
     printk("%s: stream write | to_write: %ld bytes\n", MODNAME, len);
+    if (len > the_object->available_bytes) {
+        printk("%s: error, there is no enough space on dev [%d,%d].\n", MODNAME, Major, Minor);
+        return WRITE_ERROR;
+    }
     ret = try_mutex_lock(the_flow, session, Minor, WRITE_OP);
-    if (ret < 0) {
-        return LOCK_NOT_ACQUIRED;
+    if (ret == LOCK_NOT_ACQUIRED) {
+        return WRITE_ERROR;
     }
 
     if (session->priority == HIGH_PRIORITY) {
@@ -415,6 +424,13 @@ ssize_t write_on_stream(const char *buff, size_t len, session_state *session, ob
     wake_up(&the_flow->wait_queue);
     printk("%s: lock released, ret = %ld\n", MODNAME, len - ret);
     printk("%s: written %ld bytes in block %d: '%s'\n", MODNAME, strlen(current_block->stream_content), current_block->id, current_block->stream_content);
+
+    if (priority == HIGH_PRIORITY) {
+        total_bytes_high[Minor] += len - ret;
+    } else {
+        total_bytes_low[Minor] += len - ret;
+    }
+
     return len - ret;
 }
 
@@ -447,6 +463,7 @@ int write_low(const char *buff, size_t len, session_state *session, object_state
     ret = copy_from_user((char *)packed_work->data, buff, len);
     if (ret != 0) {
         printk("%s: Packed work_struct data copy failure.\n", MODNAME);
+        return -ENOMEM;
     }
 
     printk("%s: Packed work_struct correctly allocated.\n", MODNAME);

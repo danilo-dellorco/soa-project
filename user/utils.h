@@ -24,8 +24,13 @@
 #define BLOCKING "Blocking"
 
 // Codici di errore
+#define NO_DEV -1
 #define NOT_ENOUGH_SPACE -1
 #define LOCK_NOT_ACQUIRED -2
+#define NO_DATA_READ 0
+
+// #define MAX_SIZE_BYTES 1048576  // Massima dimensione di byte mantenibili da un singolo device (1MB)
+#define MAX_SIZE_BYTES 128  // Utilizzato per debugging e testing //TODO mettere 1MB
 
 /**
  * Lista di comandi utilizzabili
@@ -50,6 +55,7 @@ char* main_menu_list[] = {
     "",
     "\x1B[1m---------------------------------------\x1B[0m",
     "\x1B[1m    11)\x1B[0m Create device nodes",
+    "\x1B[1m    12)\x1B[0m Refresh CLI",
     "\x1B[1m    -1)\x1B[0m Exit",
 };
 

@@ -60,7 +60,7 @@ int try_mutex_lock(flow_state *the_flow, session_state *session, int minor, int 
     int priority = session->priority;
     wq = &the_flow->wait_queue;
 
-    // Una scrittura low priority non può fallire, quindi il processo attende attivamente di ottenere il lock.
+    // Una scrittura low priority non può fallire, quindi il processo attende attivamente di ottenere il lock. Infatti viene controllato prima se c'è spazio disponibile sul device.
     //  - Anche se non-bloccante, devo notificare in modo sincrono il risultato della write al client.
     //  - Quindi si cerca di prendere il lock solo quando viene schedulato il lavoro deferred.
     //  - Non è possibile prevedere se il lock verrà preso e quindi se la scrittura verrà effettuata.
@@ -71,16 +71,16 @@ int try_mutex_lock(flow_state *the_flow, session_state *session, int minor, int 
         mutex_lock(&(the_flow->operation_synchronizer));
         __sync_fetch_and_add(&waiting_threads_low[minor], -1);
         printk("%s: try_mutex_lock | Low Priority - Process %d acquired lock.\n", MODNAME, current->pid);
-        return 0;
+        return LOCK_ACQUIRED;
     }
 
-    // Operazioni HIGH_PRIORITY, si effettua il trylock
+    // Operazioni sincrone, si effettua il trylock
     lock = mutex_trylock(&(the_flow->operation_synchronizer));
 
     if (lock == 0) {
-        printk("%s: Unable to get lock.\n", MODNAME);
+        printk("%s: Lock not available.\n", MODNAME);
         if (session->blocking == BLOCKING) {
-            printk("%s: Attempt to get lock. Timeout of %d ms\n", MODNAME, session->timeout);
+            printk("%s: Blocking operation, attempt to get lock. Timeout of %d ms\n", MODNAME, session->timeout);
 
             waiting_threads_high[minor]++;
             ret = put_to_waitqueue(session->timeout, &the_flow->operation_synchronizer, wq);
@@ -88,17 +88,16 @@ int try_mutex_lock(flow_state *the_flow, session_state *session, int minor, int 
 
             // Sessione bloccante, ma lock non acquisito a timeout scaduto
             if (ret == 0) {
-                return -1;
+                return LOCK_NOT_ACQUIRED;
             }
         }
-
         // Sessione non bloccante e lock non acquisito
         else {
             printk("%s: Non-blocking operation, lock failed.\n", MODNAME);
-            return -2;
+            return LOCK_NOT_ACQUIRED;
         }
     }
 
     printk("%s: Lock succesfully acquired.\n", MODNAME);
-    return 0;
+    return LOCK_ACQUIRED;
 }

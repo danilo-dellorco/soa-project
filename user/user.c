@@ -108,6 +108,8 @@ int main(int argc, char** argv) {
                 create_nodes();
                 wait_input();
                 break;
+            case (12):
+                break;
             case (-1):
                 exit_op();
                 break;
@@ -191,12 +193,10 @@ int write_op() {
     data_buff[strcspn(data_buff, "\n")] = 0;  // ignoring \n
 
     res = write(device_fd, data_buff, min(strlen(data_buff), 4096));
-    if (res == NOT_ENOUGH_SPACE) {
-        printf(COLOR_RED "\nWrite failed, there is not enough space on the device.\n" RESET);
-    } else if (res == LOCK_NOT_ACQUIRED) {
-        printf(COLOR_RED "\nWrite failed, the device it's actually locked by another process.\n" RESET);
+    if (res < 0) {
+        printf(COLOR_RED "\nWrite failed, check 'dmesg' for more info.\n" RESET);
     } else {
-        printf("\n%sWrite success, written '%d bytes' on the device.%s\n", COLOR_GREEN, res, RESET);
+        printf("\n%sWrite success, %d bytes have been written on the device.%s\n", COLOR_GREEN, res, RESET);
     }
     return res;
 }
@@ -207,7 +207,7 @@ int write_op() {
 int read_op() {
     if (device_fd < 0) {
         printf(COLOR_RED "No device actually opened. Open a device first..\n" RESET);
-        return -1;
+        return NO_DEV;
     }
 
     printf("Insert the amount of data you want to read: ");
@@ -223,10 +223,10 @@ int read_op() {
 
     clear_buffer();
     res = read(device_fd, data_buff, min(amount, 4096));
-    if (res == 0 || res == -1)
-        printf(COLOR_RED "\nRead result | no data was read from the device file \n" RESET);
-    else {
-        printf("\n%sRead result (%d bytes)%s: %s\n\n", COLOR_GREEN, res, RESET, data_buff);
+    if (res < 0) {
+        printf(COLOR_RED "\nRead failed, check 'dmesg' for more info.\n" RESET);
+    } else {
+        printf("\n%sRead success, %d bytes have been read from the device%s: %s\n\n", COLOR_GREEN, res, RESET, data_buff);
     }
 
     return res;
@@ -235,8 +235,6 @@ int read_op() {
 /**
  * Mostra il menu con i possibili comandi utente
  */
-
-// TODO mettere blocking/non blocking tra le info
 int show_menu() {
     system("clear");
     printf(COLOR_YELLOW "      ╔═══════════════════════════════╗\n" RESET);
@@ -248,6 +246,8 @@ int show_menu() {
         printf(COLOR_RED "%s\n" COLOR_RED, opened_device);
     } else {
         printf(COLOR_GREEN "%s\n" RESET, opened_device);
+        long available_space = MAX_SIZE_BYTES - read_param_field(TOTAL_BYTES_LOW_PATH, minor) - read_param_field(TOTAL_BYTES_HIGH_PATH, minor);
+        printf("%s│%s%s Estimated Available Space:%s %ld bytes\n", COLOR_YELLOW, RESET, BOLD, RESET, available_space);
         printf(COLOR_YELLOW "├───────────────────────────────────────────┤\n" RESET);
         printf("%s│ Session Priority:%s %s\n", COLOR_YELLOW, RESET, session_priority);
         printf("%s│ Session Blocking Type:%s %s\n", COLOR_YELLOW, RESET, session_blocking);
@@ -370,12 +370,15 @@ int show_device_status() {
     if (read_param_field(DEVICE_ENABLING_PATH, minor_cmd) == 0) {
         op = "DISABLED";
     }
+    long available_space = MAX_SIZE_BYTES - read_param_field(TOTAL_BYTES_LOW_PATH, minor) - read_param_field(TOTAL_BYTES_HIGH_PATH, minor);
 
     printf("│ %sOperativity:%s %s\n", BOLD, RESET, op);
+    printf("│ %sAvailable Space:%s %ld bytes\n", BOLD, RESET, available_space);
     printf("│ %sHigh Priority Bytes:%s %d\n", BOLD, RESET, read_param_field(TOTAL_BYTES_HIGH_PATH, minor_cmd));
     printf("│ %sLow Priority Bytes:%s %d\n", BOLD, RESET, read_param_field(TOTAL_BYTES_LOW_PATH, minor_cmd));
     printf("│ %sHigh Priority Waiting Threads:%s %d\n", BOLD, RESET, read_param_field(WAITING_THREADS_HIGH_PATH, minor_cmd));
     printf("│ %sLow Priority Waiting Threads:%s %d\n", BOLD, RESET, read_param_field(WAITING_THREADS_LOW_PATH, minor_cmd));
+    printf("│ %sTimeout value:%s %d\n", BOLD, RESET, session_timeout);
     printf("└───────────────────────────────────┘\n");
 }
 
