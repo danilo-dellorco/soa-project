@@ -9,7 +9,7 @@ Funzioni e macro ausiliarie utilizzate nel device driver
 #include "params.h"
 
 /**
- * Definisco le macro per ottenere MAJOR e MINOR number dalla sessione corrente, in base alla versione del kernel utilizzata
+ * Macro per ottenere MAJOR e MINOR number dalla sessione corrente, in base alla versione del kernel utilizzata
  */
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 0, 0)
 #define get_major(session) MAJOR(session->f_inode->i_rdev)
@@ -49,9 +49,9 @@ int put_to_waitqueue(unsigned long timeout, struct mutex *mutex, wait_queue_head
 
 /**
  * Prova ad acquisire il lock sul mutex.
- * Se l'operazione è non bloccante e il lock non viene acquisito, viene ritornato NULL e l'operazione fallisce.
- * Se l'operazione è bloccante ed il lock non viene acquisito, il task viene messo nella waitqueue.
- * Ritorna 0 se il lock viene acquisito correttamente, -1 se il lock non viene acquisito allo scadere del timeout, -2 se il lock non viene acquisito in una operazione non-bloccante.
+ * - Se l'operazione è non bloccante e il lock non viene acquisito, viene ritornato NULL e l'operazione fallisce.
+ * - Se l'operazione è bloccante ed il lock non viene acquisito, il task viene messo nella waitqueue.
+ * Ritorna 0 se il lock viene acquisito correttamente, -1 se il lock non viene acquisito.
  */
 int try_mutex_lock(flow_state *the_flow, session_state *session, int minor, int op) {
     int lock;
@@ -61,10 +61,6 @@ int try_mutex_lock(flow_state *the_flow, session_state *session, int minor, int 
     wq = &the_flow->wait_queue;
 
     // Una scrittura low priority non può fallire, quindi il processo attende attivamente di ottenere il lock. Infatti viene controllato prima se c'è spazio disponibile sul device.
-    //  - Anche se non-bloccante, devo notificare in modo sincrono il risultato della write al client.
-    //  - Quindi si cerca di prendere il lock solo quando viene schedulato il lavoro deferred.
-    //  - Non è possibile prevedere se il lock verrà preso e quindi se la scrittura verrà effettuata.
-    //  - Si assume che nessuna scrittura low priority possa fallire.
     if (priority == LOW_PRIORITY && op == WRITE_OP) {
         printk("%s: try_mutex_lock | Low Priority - Process %d waiting to get lock.\n", MODNAME, current->pid);
         __sync_fetch_and_add(&waiting_threads_low[minor], 1);  // Necessario per evitare out-of-order

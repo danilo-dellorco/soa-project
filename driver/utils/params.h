@@ -20,6 +20,9 @@ Mantiene tutti i parametri e le costanti utilizzate all'interno del device drive
 
 #define TEST
 
+#define MODNAME "MULTI-FLOW DEV"
+#define DEVICE_NAME "mflow-dev"
+
 #ifdef TEST
 #define MAX_SIZE_BYTES 128  // Utilizzato per debugging e testing
 #else
@@ -41,27 +44,24 @@ Mantiene tutti i parametri e le costanti utilizzate all'interno del device drive
 #define WRITE_OP 1
 #define READ_OP 2
 
-#define MODNAME "MULTI-FLOW DEV"
-#define DEVICE_NAME "mflow-dev"
-
 #define TEST_TIME 15000  // Tempo di attesa prima di rilasciare il lock nella fase di testing
 
+// Codici di ritorno
 #define WRITE_ERROR -1
 #define READ_ERROR -1
-#define LOCK_NOT_ACQUIRED -2
+#define LOCK_NOT_ACQUIRED -1
 #define LOCK_ACQUIRED 0
 
 /**
  *  Parametri del modulo
  */
-
 // Posso scrivere sullo pseudofile per abilitare o disabilitare uno specifico device
 unsigned long device_enabling[NUM_DEVICES];
 module_param_array(device_enabling, ulong, NULL, 0660);
 MODULE_PARM_DESC(device_enabling, "Specify if a device file is enabled or disabled. If it is disabled, any attempt to open a session will fail");
 
 // Non posso modificare manualmente il numero dei bytes o il numero di thread in attesa, in quanto sono informazioni controllate indirettamente dal modulo.
-// Posso comunque leggere queste informazioni
+// Posso comunque leggere lato utente queste informazioni.
 unsigned long total_bytes_low[NUM_DEVICES];
 module_param_array(total_bytes_low, ulong, NULL, 0440);
 MODULE_PARM_DESC(total_bytes_low, "Number of bytes yet to be read in the low priority flow.");
@@ -78,6 +78,7 @@ unsigned long waiting_threads_high[NUM_DEVICES];
 module_param_array(waiting_threads_high, ulong, NULL, 0440);
 MODULE_PARM_DESC(waiting_threads_high, "Number of threads waiting for data on the high priority flow.");
 
+// Ritorna la stringa associata ad un codice di priorità
 char* get_prio_str(int code) {
     if (code == 0) {
         return "LOW_PRIORITY";
@@ -85,6 +86,7 @@ char* get_prio_str(int code) {
     return "HIGH_PRIORITY";
 }
 
+// Ritorna la stringa associata ad un codice per operazioni bloccanti o non-bloccanti
 char* get_block_str(int code) {
     if (code == 0) {
         return "BLOCKING";

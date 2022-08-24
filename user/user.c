@@ -46,6 +46,10 @@ void clear_buffer() {
     memset(data_buff, 0, 4096);
 }
 
+/**
+ * Main del programma. Mostra la lista di comandi disponibili e le informazioni sul dispositivo aperto.
+ * Richiede in un loop infinito l'inserimento di un comando all'utente, mostrando poi il risultato dell'operazione
+ */
 int main(int argc, char** argv) {
     int ret;
     if (argc < 3) {
@@ -123,7 +127,7 @@ int main(int argc, char** argv) {
 }
 
 /**
- * Apre una sessione verso un device file
+ * Apre una sessione verso un device file, specificato dall'utente tramite input da tastiera
  */
 int open_device() {
     printf("Insert Minor Number of the device driver to open: ");
@@ -149,6 +153,7 @@ int open_device() {
         device_fd = -1;
     }
 
+    // Apertura del file specificato
     sprintf(opened_device, "%s%d", device_path, minor);
     device_fd = open(opened_device, O_RDWR);
     if (device_fd == -1) {
@@ -163,21 +168,19 @@ int open_device() {
         device_fd = -1;
         return -1;
     }
-
     printf("%sDevice %s successfully opened, fd is: %d%s\n", COLOR_GREEN, opened_device, device_fd, RESET);
 
+    // Controllo se il file aperto ha un major differente da quello del client
     opened_major = get_open_major(opened_device);
-
     if (opened_major != major) {
         printf("%s%s\nWarning: currently open device has major '%d' different than '%d' used by the CLI.%s\n", COLOR_YELLOW, BOLD, opened_major, major, RESET);
-        printf("%sTry using command (11) to re-create the device node using the current driver.%s\n", COLOR_YELLOW, RESET);
     }
 
     return 0;
 }
 
 /**
- * Scrive i dati specificati da stdin nel device attualmente aperto
+ * Scrive i dati inseriti da stdin nel device attualmente aperto.
  */
 int write_op() {
     if (device_fd < 0) {
@@ -232,7 +235,7 @@ int read_op() {
 }
 
 /**
- * Mostra il menu con i possibili comandi utente
+ * Mostra il menu con i possibili comandi utente. Se c'è un dispositivo aperto vengono mostrate anche informazioni sullo stato attuale.
  */
 int show_menu() {
     system("clear");
@@ -299,10 +302,9 @@ int create_nodes() {
 }
 
 /**
- * Abilita o disabilita un device file accedendo all'apposito parametro nel VFS
+ * Abilita o disabilita un device file accedendo all'apposito parametro esposto nel VFS
  */
 int set_device_enabling(int status) {
-    char* filename = "/sys/module/test/parameters/device_enabling";
     int count = 0;
     char current_char = 'n';
     int swap_pos = 0;
@@ -310,8 +312,8 @@ int set_device_enabling(int status) {
     size_t len = 0;
     int minor_cmd;
 
-    // Open del file relativo al module_param_array 'device_enabling'
-    FILE* handle = fopen(filename, "w+");
+    // Apertura del file relativo al module_param_array 'device_enabling'
+    FILE* handle = fopen(DEVICE_ENABLING_PATH, "w+");
     if (handle == NULL) {
         return -1;
     }
@@ -322,12 +324,13 @@ int set_device_enabling(int status) {
         op = "disable";
     }
 
+    // Richiesta all'utente del minor che si vuole abilitare/disabilitare
     printf("Enter the minor number of the device to %s (-1 for currently opened device): ", op);
     fgets(data_buff, sizeof(data_buff), stdin);
     minor_cmd = atoi(data_buff);
     if (minor_cmd == -1) {
         if (device_fd == -1) {
-            printf(COLOR_RED "No device actually opened. Open a device first..\n" RESET);
+            printf(COLOR_RED "No device actually opened. Open a device first.\n" RESET);
             return -1;
         }
         minor_cmd = minor;
@@ -338,6 +341,7 @@ int set_device_enabling(int status) {
     }
     clear_buffer();
 
+    // Scrittura del valore 1/0 nel file device_enabling, alla posizione associata al minor
     getline(&line, &len, handle);
     char s = status + '0';
     line[2 * minor_cmd] = s;
@@ -388,10 +392,13 @@ int setup_session(int op) {
     int timeout;
     int ret;
 
+    // Verifica se c'è una sessione attiva
     if (device_fd == -1) {
         printf(COLOR_RED "No active session. Open a device first.\n" RESET);
         return -1;
     }
+
+    // Solo se l'operazione è di set_timeout si richiede all'utente il valore da impostare
     if (op != 7) {
         timeout = 0;
     } else {
@@ -403,6 +410,8 @@ int setup_session(int op) {
             return -1;
         }
     }
+
+    // Esecuzione di ioctl
     timeout = atoi(data_buff);
     ret = ioctl(device_fd, op, timeout);
     if (ret == -1) {
@@ -415,7 +424,7 @@ int setup_session(int op) {
 }
 
 /**
- * Chiude il programma liberando tutte le risorse
+ * Termina il client, chiudendo il file se c'è una sessione attiva verso un dispositivo
  */
 int exit_op() {
     if (device_fd != -1) {

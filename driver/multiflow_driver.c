@@ -31,12 +31,12 @@ static int Minor;
 
 /**
  * Dobbiamo gestire 128 dispositivi di I/O, quindi 128 minor numbers differenti.
- * Definiamo quindi 128 differenti strutture object_state mantenute nell'array objects.
+ * Definiamo un array objects che mantiene 128 differenti strutture object_state.
  **/
 object_state objects[NUM_DEVICES];
 
 /*
- * Invocata dal VFS quando apriamo il nodo associato al driver.
+ * Invocata dal VFS quando viene aperto il nodo associato al driver.
  */
 static int dev_open(struct inode *inode, struct file *file) {
     session_state *session;
@@ -70,7 +70,7 @@ static int dev_open(struct inode *inode, struct file *file) {
 }
 
 /**
- * Invocata dal VFS quando si chiude il file, quindi la open è già stata effettuata correttamente
+ * Invocata dal VFS quando si chiude il file.
  */
 static int dev_release(struct inode *inode, struct file *file) {
     session_state *session = file->private_data;
@@ -81,9 +81,12 @@ static int dev_release(struct inode *inode, struct file *file) {
 }
 
 // ------------------------------------------ WRITE OPERATION ----------------------------------------------
-
 /**
- * Funzione eseguita effettivamente quando andiamo a chiamare una write() a livello applicativo
+ * Implementazione dell'operazione di scrittura del driver.
+ *  - Per le operazioni a bassa priorità viene invocata la write_low che utilizza il meccanismo di deferred work. Il risultato della write viene
+ *    comunque notificato in modo sincrono: per questo si verifica subito se c'è spazio sufficiente per la scrittura e viene subito aggiornato lo spazio rimanente.
+ *
+ *  - Per le operazioni ad alta priorità viene chiamata direttamente la write_on_stream, che internamente verifica lo spazio libero e cerca di prendere il lock.
  */
 static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t *off) {
     session_state *session = filp->private_data;
@@ -95,10 +98,7 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
     the_object = &objects[Minor];
     printk("%s: Called a %s %s write of %ld bytes on dev [%d,%d] | Free Space: %ld bytes\n", MODNAME, get_prio_str(priority), get_block_str(blocking), len, Major, Minor, the_object->available_bytes);
 
-    // A bassa priorità vedo subito se ho spazio disponibile, tolgo subito i bytes che verranno letti dal totale libero
-    // e poi schedulo la scrittura deferred. Il risultato viene notificato subito quindi se c'è spazio disponibile la scrittura non fallirà mai.
-    // Il numero di bytes leggibili dal flusso viene invece incrementato solo quando avviene effettivamente la scrittura, perché altrimenti
-    // la read può essere eseguita anche se non ci sono bytes scritti.
+    // A bassa priorità verifico subito se la scrittura può avvenire e notifico l'utente in maniera sincrona. La write viene schedulata tramite deferred_work.
     if (priority == LOW_PRIORITY) {
         if (len > the_object->available_bytes) {
             printk("%s: error, there is no enough space on dev [%d,%d].\n", MODNAME, Major, Minor);
@@ -108,7 +108,7 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
         written_bytes = write_low(buff, len, session, the_object);
     }
 
-    // Ad alta priorità i controlli vengono effettuati al momento della write, che può fallire per lo spazio libero o per lock busy.
+    // Ad alta priorità i controlli vengono effettuati al momento della write, che può fallire per lo spazio libero o per lock non acquisito.
     else if (priority == HIGH_PRIORITY) {
         written_bytes = write_on_stream(buff, len, session, the_object);
         the_object->available_bytes -= written_bytes;
@@ -130,29 +130,37 @@ ssize_t write_on_stream(const char *buff, size_t len, session_state *session, ob
 
     the_flow = &the_object->priority_flow[priority];
 
-    // Blocco vuoto per la scrittura successiva. E' il blocco successivo a quello attualmente scritto
+    // Controllo sullo spazio libero nel dispositivo.
+    printk("%s: stream write | to_write: %ld bytes\n", MODNAME, len);
+    if (len > the_object->available_bytes) {
+        printk("%s: error, there is no enough space on dev [%d,%d].\n", MODNAME, Major, Minor);
+        return WRITE_ERROR;
+    }
+
+    // Ottenimento del lock. In base al tipo di operazione high/low blocking/non-blocking si attende o meno.
+    ret = try_mutex_lock(the_flow, session, Minor, WRITE_OP);
+    if (ret == LOCK_NOT_ACQUIRED) {
+        return WRITE_ERROR;
+    }
+
+    // Creazione di un blocco vuoto per la scrittura successiva a quella attuale.
     empty_block = kzalloc(sizeof(stream_block), GFP_ATOMIC);
     block_buff = kzalloc(len + 1, GFP_ATOMIC);  // +1 per \n sui multipli di 8 bytes
 
     empty_block->next = NULL;
     empty_block->stream_content = NULL;
 
-    printk("%s: stream write | to_write: %ld bytes\n", MODNAME, len);
-    if (len > the_object->available_bytes) {
-        printk("%s: error, there is no enough space on dev [%d,%d].\n", MODNAME, Major, Minor);
-        return WRITE_ERROR;
-    }
-    ret = try_mutex_lock(the_flow, session, Minor, WRITE_OP);
-    if (ret == LOCK_NOT_ACQUIRED) {
-        return WRITE_ERROR;
-    }
-
+    // Copia dei bytes da scrivere nel block_buff del dispositivo.
+    // - HIGH write: buff è un buffer in user-space, quindi si usa la copy_from_user
+    // - LOW write : buff è il buffer temporaneo in kernel-space scritto nella write_low, quindi si assegna semplicemente il suo contenuto.
     if (session->priority == HIGH_PRIORITY) {
         ret = copy_from_user(block_buff, buff, len);
     } else if (session->priority == LOW_PRIORITY) {
         block_buff = (char *)buff;
         ret = 0;
     }
+
+    // Si aggiunge il blocco in coda allo stream e si aggiorna il puntatore al blocco successivo su quello vuoto.
     current_block = the_flow->tail;
     empty_block->id = current_block->id + 1;
 
@@ -160,6 +168,7 @@ ssize_t write_on_stream(const char *buff, size_t len, session_state *session, ob
     current_block->next = empty_block;
     the_flow->tail = empty_block;
 
+    // Sblocco del mutex e aggiornamento dei bytes totali nel flusso su cui si è scritto.
 #ifdef TEST
     printk("%s: [TEST] waiting %d msec to release write lock\n", MODNAME, TEST_TIME);
     msleep(30000);
@@ -179,7 +188,7 @@ ssize_t write_on_stream(const char *buff, size_t len, session_state *session, ob
 }
 
 /**
- * Effettua la scrittura sul flusso a bassa priorità. Copia il buffer utente in un buffer kernel temporaneo,
+ * Effettua la scrittura sul flusso a bassa priorità. Copia i dati utente da scrivere in un buffer kernel temporaneo,
  * che verrà immesso effettivamente nello stream soltanto quando verrà schedulata la write_deferred.
  */
 int write_low(const char *buff, size_t len, session_state *session, object_state *the_object) {
@@ -238,7 +247,9 @@ void write_deferred(struct work_struct *deferred_work) {
 // ------------------------------------------ READ OPERATION ----------------------------------------------
 
 /**
- * Funzione eseguita effettivamente quando andiamo a chiamare una read() a livello applicativo
+ * Implementazione dell'operazione di lettura del driver. Questa avviene in un while(1) leggendo progressivamente i blocchi dello stream.
+ * - Se la dimensione della read va a leggere completamente i bytes di un blocco si libera la rispettiva area di memoria e si passa al blocco successivo.
+ * - Se la lettura non consuma totalmente i bytes di un blocco si aggiorna soltanto l'offset sulla posizione attuale.
  */
 static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off) {
     int ret;
@@ -273,7 +284,7 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off) 
     current_block = the_flow->head;
     printk("%s: start reading from head - block%d \n", MODNAME, current_block->id);
 
-    // Non sono presenti dati nello stream
+    // Non sono presenti dati nello stream, quindi sblocco il mutex e ritorno al chiamante.
     if (current_block->stream_content == NULL) {
         printk("%s: No data to read in current block\n", MODNAME);
         mutex_unlock(&(the_flow->operation_synchronizer));
@@ -284,34 +295,31 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off) 
     to_read = len;
     bytes_read = 0;
 
+    // Ciclo in cui vengono letti i bytes richiesti dallo stream.
     while (1) {
         block_size = strlen(current_block->stream_content);
         printk("%s: to_read: %d, block_size: %ld, read_off: %d, bytes_read: %d\n", MODNAME, to_read, block_size, current_block->read_offset, bytes_read);
 
-        // Richiesta la lettura di più byte rispetto a quelli da leggere nel blocco corrente
+        // Richiesta la lettura di più byte rispetto a quelli da leggere nel blocco corrente.
         if (block_size - current_block->read_offset < to_read) {
             printk("%s: cross block read in block %d", MODNAME, current_block->id);
             block_residual = block_size - current_block->read_offset;
             to_read -= block_residual;
             ret = copy_to_user(&buff[bytes_read], &(current_block->stream_content[current_block->read_offset]), block_residual);
             bytes_read += (block_residual - ret);
-
             printk("%s: block %d fully read.", MODNAME, current_block->id);
+
             // Sposto logicamente l'inizio dello stream al blocco successivo.
             old_id = current_block->id;
             completed_block = current_block;
             current_block = current_block->next;
             the_flow->head = current_block;
 
-            printk("--- head | %d -> %d ", old_id, the_flow->head->id);
-
             // Sono stati letti tutti i dati dal blocco precedente, quindi posso liberare la rispettiva area di memoria.
             kfree(completed_block->stream_content);
             kfree(completed_block);
 
-            printk("--- free | deallocated block %d memory", old_id);
-
-            // Siamo nell'ultimo blocco, quindi abbiamo letto tutti i dati dello stream
+            // Siamo nell'ultimo blocco dello stream e sono stati quindi letti tutti i byte disponibili. Si sblocca il mutex e si ritorna al chiamante senza passare al blocco successivo.
             if (current_block->stream_content == NULL) {
                 if (priority == HIGH_PRIORITY) {
                     total_bytes_high[Minor] -= bytes_read;
@@ -328,9 +336,9 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off) 
             }
         }
 
-        // Il numero di byte richiesti sono presenti nel blocco corrente
+        // Il numero di byte richiesti sono presenti nel blocco corrente. Si copiano i byte nel buffer utente, si sblocca il mutex e si ritorna al chiamante.
         else {
-            printk("%s: whole block read in block %d| block content: '%s'", MODNAME, current_block->id, &current_block->stream_content[current_block->read_offset]);
+            printk("%s: whole block read in block %d | block content: '%s'", MODNAME, current_block->id, &current_block->stream_content[current_block->read_offset]);
             ret = copy_to_user(&buff[bytes_read], &(current_block->stream_content[current_block->read_offset]), to_read);
             bytes_read += (to_read - ret);
             current_block->read_offset += (to_read - ret);
@@ -415,7 +423,7 @@ static long dev_ioctl(struct file *filp, unsigned int command, unsigned long par
 }
 
 /*
- * Definizione delle file_operations.
+ * Definizione delle file_operations del Driver.
  */
 static struct file_operations fops = {
     .owner = THIS_MODULE,
@@ -426,7 +434,7 @@ static struct file_operations fops = {
     .unlocked_ioctl = dev_ioctl};
 
 /*
- *  Inizializza tutti i devices e registra il modulo nel kernel. Fornisce inoltre tramite printk il Major Number che viene assegnato al Driver.
+ *  Inizializza tutti i dispositivi e registra il Char Device nel kernel. Fornisce inoltre tramite printk il Major Number che viene assegnato al Driver.
  */
 int init_module(void) {
     int i, j;
@@ -455,7 +463,7 @@ int init_module(void) {
         objects[i].available_bytes = MAX_SIZE_BYTES;
     }
 
-    // Registrazione del modulo
+    // Registrazione del Char Device Driver
     Major = __register_chrdev(0, 0, 128, DEVICE_NAME, &fops);
     if (Major < 0) {
         printk("%s: registering device failed\n", MODNAME);
@@ -474,7 +482,6 @@ revert_allocation:
 
 /**
  * Effettua il cleanup del modulo quando questo viene smontato/deregistrato
- *
  */
 void cleanup_module(void) {
     unregister_chrdev(Major, DEVICE_NAME);
