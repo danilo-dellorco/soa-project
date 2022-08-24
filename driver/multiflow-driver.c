@@ -12,10 +12,6 @@ Implementa l'effettivo Multi-flow device driver
 #include "utils/structs.h"
 #include "utils/tools.h"
 
-#define TEST
-
-// TODO qualche bug nella lettura high di bytes superiori, settano a -1 tipo.
-
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Danilo Dell'Orco");
 
@@ -36,7 +32,6 @@ static int Minor;
 /**
  * Dobbiamo gestire 128 dispositivi di I/O, quindi 128 minor numbers differenti.
  * Definiamo quindi 128 differenti strutture object_state mantenute nell'array objects.
- * Per ogni device ci sono 2 strutture object_state, per ognuno dei due flussi di priorità
  **/
 object_state objects[NUM_DEVICES];
 
@@ -85,12 +80,10 @@ static int dev_release(struct inode *inode, struct file *file) {
     return 0;
 }
 
+// ------------------------------------------ WRITE OPERATION ----------------------------------------------
+
 /**
  * Funzione eseguita effettivamente quando andiamo a chiamare una write() a livello applicativo
- * @param filp puntatore alla struttura dati che rappresenta la sessione
- * @param buff puntatore all'area di memoria applicativa passato dalla syscall
- * @param len taglia della write
- * @param off offset all'area di memoria filp su cui lavoriamo.
  */
 static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t *off) {
     session_state *session = filp->private_data;
@@ -124,11 +117,128 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
 }
 
 /**
+ * Effettua la scrittura effettiva sullo stream di dati, scegliendo il flusso specifico in base alla priorità della scrittura.
+ */
+ssize_t write_on_stream(const char *buff, size_t len, session_state *session, object_state *the_object) {
+    stream_block *current_block;
+    stream_block *empty_block;
+    flow_state *the_flow;
+
+    char *block_buff;
+    int ret;
+    int priority = session->priority;
+
+    the_flow = &the_object->priority_flow[priority];
+
+    // Blocco vuoto per la scrittura successiva. E' il blocco successivo a quello attualmente scritto
+    empty_block = kzalloc(sizeof(stream_block), GFP_ATOMIC);
+    block_buff = kzalloc(len + 1, GFP_ATOMIC);  // +1 per \n sui multipli di 8 bytes
+
+    empty_block->next = NULL;
+    empty_block->stream_content = NULL;
+
+    printk("%s: stream write | to_write: %ld bytes\n", MODNAME, len);
+    if (len > the_object->available_bytes) {
+        printk("%s: error, there is no enough space on dev [%d,%d].\n", MODNAME, Major, Minor);
+        return WRITE_ERROR;
+    }
+    ret = try_mutex_lock(the_flow, session, Minor, WRITE_OP);
+    if (ret == LOCK_NOT_ACQUIRED) {
+        return WRITE_ERROR;
+    }
+
+    if (session->priority == HIGH_PRIORITY) {
+        ret = copy_from_user(block_buff, buff, len);
+    } else if (session->priority == LOW_PRIORITY) {
+        block_buff = (char *)buff;
+        ret = 0;
+    }
+    current_block = the_flow->tail;
+    empty_block->id = current_block->id + 1;
+
+    current_block->stream_content = block_buff;
+    current_block->next = empty_block;
+    the_flow->tail = empty_block;
+
+#ifdef TEST
+    printk("%s: [TEST] waiting %d msec to release write lock\n", MODNAME, TEST_TIME);
+    msleep(30000);
+#endif
+    mutex_unlock(&(the_flow->operation_synchronizer));
+    wake_up(&the_flow->wait_queue);
+    printk("%s: lock released, ret = %ld\n", MODNAME, len - ret);
+    printk("%s: written %ld bytes in block %d: '%s'\n", MODNAME, strlen(current_block->stream_content), current_block->id, current_block->stream_content);
+
+    if (priority == HIGH_PRIORITY) {
+        total_bytes_high[Minor] += len - ret;
+    } else {
+        total_bytes_low[Minor] += len - ret;
+    }
+
+    return len - ret;
+}
+
+/**
+ * Effettua la scrittura sul flusso a bassa priorità. Copia il buffer utente in un buffer kernel temporaneo,
+ * che verrà immesso effettivamente nello stream soltanto quando verrà schedulata la write_deferred.
+ */
+int write_low(const char *buff, size_t len, session_state *session, object_state *the_object) {
+    int ret;
+    packed_work_struct *packed_work;
+    printk("%s: Deferred work requested.\n", MODNAME);
+
+    packed_work = kzalloc(sizeof(packed_work_struct), GFP_ATOMIC);
+    if (packed_work == NULL) {
+        printk("%s: Packed work_struct allocation failure\n", MODNAME);
+        return -ENOMEM;
+    }
+
+    packed_work->len = len;
+    packed_work->session = session;
+    packed_work->minor = Minor;
+
+    packed_work->data = kzalloc(len, GFP_ATOMIC);
+    if (packed_work->data == NULL) {
+        printk("%s: Packet work_struct data allocation failure\n", MODNAME);
+        return -ENOMEM;
+    }
+
+    ret = copy_from_user((char *)packed_work->data, buff, len);
+    if (ret != 0) {
+        printk("%s: Packed work_struct data copy failure.\n", MODNAME);
+        return -ENOMEM;
+    }
+
+    printk("%s: Packed work_struct correctly allocated.\n", MODNAME);
+
+    // Inizializza la work_struct nella struttura packed, con function pointer a write_deferred
+    __INIT_WORK(&(packed_work->work), &write_deferred, (unsigned long)&(packed_work->work));
+    schedule_work(&packed_work->work);
+
+    return len - ret;
+}
+
+/**
+ * Funzione schedulata da __INIT_WORK per effettuare la scrittura in modalità deferred.
+ */
+void write_deferred(struct work_struct *deferred_work) {
+    const char *buff;
+    packed_work_struct *packed = container_of(deferred_work, packed_work_struct, work);
+    int minor = packed->minor;
+    session_state *session = packed->session;
+    object_state *the_object = &objects[minor];
+    size_t len = packed->len;
+
+    buff = packed->data;
+
+    printk("%s: kworker daemon awaken with PID=%d. Writing.\n", MODNAME, current->pid);
+    write_on_stream(buff, len, session, the_object);
+}
+
+// ------------------------------------------ READ OPERATION ----------------------------------------------
+
+/**
  * Funzione eseguita effettivamente quando andiamo a chiamare una read() a livello applicativo
- * @param filp puntatore alla struttura dati che rappresenta la sessione
- * @param buff puntatore all'area di memoria applicativa passato dalla syscall
- * @param len taglia della write
- * @param off offset all'area di memoria filp su cui lavoriamo.
  */
 static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off) {
     int ret;
@@ -305,9 +415,8 @@ static long dev_ioctl(struct file *filp, unsigned int command, unsigned long par
 }
 
 /*
- * Assegnazione della struttura driver, specificando i puntatori alle varie file operations implementate
+ * Definizione delle file_operations.
  */
-
 static struct file_operations fops = {
     .owner = THIS_MODULE,
     .write = dev_write,
@@ -317,10 +426,12 @@ static struct file_operations fops = {
     .unlocked_ioctl = dev_ioctl};
 
 /*
- *  Inizializza il modulo, scrivendo sul buffer del kernel il Major Number assegnato al Driver.
+ *  Inizializza tutti i devices e registra il modulo nel kernel. Fornisce inoltre tramite printk il Major Number che viene assegnato al Driver.
  */
 int init_module(void) {
     int i, j;
+
+    // Inizializzazione dei dispositivi
     for (i = 0; i < NUM_DEVICES; i++) {
         for (j = 0; j < NUM_FLOWS; j++) {
             flow_state *object_flow = &objects[i].priority_flow[j];
@@ -335,24 +446,22 @@ int init_module(void) {
             object_flow->head->stream_content = NULL;
             object_flow->head->read_offset = 0;
 
-            // Di default tutti i dispositivi sono abilitati
             init_waitqueue_head(&object_flow->wait_queue);
-
             if (object_flow->head == NULL) goto revert_allocation;
         }
+
+        // Di default tutti i dispositivi sono abilitati
         device_enabling[i] = ENABLED;
         objects[i].available_bytes = MAX_SIZE_BYTES;
     }
 
+    // Registrazione del modulo
     Major = __register_chrdev(0, 0, 128, DEVICE_NAME, &fops);
-
     if (Major < 0) {
         printk("%s: registering device failed\n", MODNAME);
         return Major;
     }
-
     printk(KERN_INFO "%s: new device registered, it is assigned major number %d\n", MODNAME, Major);
-
     return 0;
 
 revert_allocation:
@@ -369,129 +478,6 @@ revert_allocation:
  */
 void cleanup_module(void) {
     unregister_chrdev(Major, DEVICE_NAME);
-
     printk(KERN_INFO "%s: new device unregistered, it was assigned major number %d\n", MODNAME, Major);
-
     return;
-}
-
-ssize_t write_on_stream(const char *buff, size_t len, session_state *session, object_state *the_object) {
-    stream_block *current_block;
-    stream_block *empty_block;
-    flow_state *the_flow;
-
-    char *block_buff;
-    int ret;
-    int priority = session->priority;
-
-    the_flow = &the_object->priority_flow[priority];
-
-    // Blocco vuoto per la scrittura successiva. E' il blocco successivo a quello attualmente scritto
-    empty_block = kzalloc(sizeof(stream_block), GFP_ATOMIC);
-    block_buff = kzalloc(len + 1, GFP_ATOMIC);  // +1 per \n sui multipli di 8 bytes
-
-    empty_block->next = NULL;
-    empty_block->stream_content = NULL;
-
-    printk("%s: stream write | to_write: %ld bytes\n", MODNAME, len);
-    if (len > the_object->available_bytes) {
-        printk("%s: error, there is no enough space on dev [%d,%d].\n", MODNAME, Major, Minor);
-        return WRITE_ERROR;
-    }
-    ret = try_mutex_lock(the_flow, session, Minor, WRITE_OP);
-    if (ret == LOCK_NOT_ACQUIRED) {
-        return WRITE_ERROR;
-    }
-
-    if (session->priority == HIGH_PRIORITY) {
-        ret = copy_from_user(block_buff, buff, len);
-    } else if (session->priority == LOW_PRIORITY) {
-        block_buff = (char *)buff;
-        ret = 0;
-    }
-    current_block = the_flow->tail;
-    empty_block->id = current_block->id + 1;
-
-    current_block->stream_content = block_buff;
-    current_block->next = empty_block;
-    the_flow->tail = empty_block;
-
-#ifdef TEST
-    printk("%s: [TEST] waiting %d msec to release write lock\n", MODNAME, TEST_TIME);
-    msleep(30000);
-#endif
-    mutex_unlock(&(the_flow->operation_synchronizer));
-    wake_up(&the_flow->wait_queue);
-    printk("%s: lock released, ret = %ld\n", MODNAME, len - ret);
-    printk("%s: written %ld bytes in block %d: '%s'\n", MODNAME, strlen(current_block->stream_content), current_block->id, current_block->stream_content);
-
-    if (priority == HIGH_PRIORITY) {
-        total_bytes_high[Minor] += len - ret;
-    } else {
-        total_bytes_low[Minor] += len - ret;
-    }
-
-    return len - ret;
-}
-
-/**
- * Effettua la scrittura per il flusso a bassa priorità. Copia il buffer utente in un buffer kernel temporaneo,
- * che verrà immesso effettivamente nello stream soltanto quando verrà schedulata la write_deferred.
- */
-int write_low(const char *buff, size_t len, session_state *session, object_state *the_object) {
-    int ret;
-    packed_work_struct *packed_work;
-
-    printk("%s: Deferred work requested.\n", MODNAME);
-
-    packed_work = kzalloc(sizeof(packed_work_struct), GFP_ATOMIC);
-    if (packed_work == NULL) {
-        printk("%s: Packed work_struct allocation failure\n", MODNAME);
-        return -ENOMEM;
-    }
-
-    packed_work->len = len;
-    packed_work->session = session;
-    packed_work->minor = Minor;
-
-    packed_work->data = kzalloc(len, GFP_ATOMIC);
-    if (packed_work->data == NULL) {
-        printk("%s: Packet work_struct data allocation failure\n", MODNAME);
-        return -ENOMEM;
-    }
-
-    ret = copy_from_user((char *)packed_work->data, buff, len);
-    if (ret != 0) {
-        printk("%s: Packed work_struct data copy failure.\n", MODNAME);
-        return -ENOMEM;
-    }
-
-    printk("%s: Packed work_struct correctly allocated.\n", MODNAME);
-
-    // Inizializza la work_struct nella struttura packed, con function pointer a write_deferred
-    __INIT_WORK(&(packed_work->work), (void *)write_deferred, (unsigned long)&(packed_work->work));
-    schedule_work(&packed_work->work);
-
-    return len - ret;
-}
-
-/**
- * Effettua la scrittura in modalità deferred. Il numero di bytes scritti vengono notificati immediatamente
- * quindi non viene ritornato nulla in questa funzione, che non può fallire nel locking.
- */
-void write_deferred(struct work_struct *deferred_work) {
-    const char *buff;
-    packed_work_struct *packed = container_of(deferred_work, packed_work_struct, work);
-    int minor = packed->minor;
-    session_state *session = packed->session;
-    object_state *the_object = &objects[minor];
-    size_t len = packed->len;
-
-    buff = packed->data;
-
-    // printk("buff: %s\n", buff);s
-    // loff_t *off = container_of(deferred_work, packed_work_struct, work)->off;
-
-    printk("%s: kworker daemon awaken with PID=%d. Writing.\n", MODNAME, current->pid);
-    write_on_stream(buff, len, session, the_object);
 }

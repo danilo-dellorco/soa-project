@@ -243,11 +243,11 @@ int show_menu() {
     printf(COLOR_YELLOW "┌───────────────────────────────────────────┐\n" RESET);
     printf("%s│%s%s Currently Opened Device:%s ", COLOR_YELLOW, RESET, BOLD, RESET);
     if (device_fd == -1) {
-        printf(COLOR_RED "%s\n" COLOR_RED, opened_device);
+        printf(COLOR_RED "%s\n" RESET, opened_device);
     } else {
         printf(COLOR_GREEN "%s\n" RESET, opened_device);
         long available_space = MAX_SIZE_BYTES - read_param_field(TOTAL_BYTES_LOW_PATH, minor) - read_param_field(TOTAL_BYTES_HIGH_PATH, minor);
-        printf("%s│%s%s Estimated Available Space:%s %ld bytes\n", COLOR_YELLOW, RESET, BOLD, RESET, available_space);
+        // printf("%s│%s%s Estimated Available Space:%s %ld bytes\n", COLOR_YELLOW, RESET, BOLD, RESET, available_space);
         printf(COLOR_YELLOW "├───────────────────────────────────────────┤\n" RESET);
         printf("%s│ Session Priority:%s %s\n", COLOR_YELLOW, RESET, session_priority);
         printf("%s│ Session Blocking Type:%s %s\n", COLOR_YELLOW, RESET, session_blocking);

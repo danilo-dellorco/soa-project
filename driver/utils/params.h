@@ -18,11 +18,16 @@ Mantiene tutti i parametri e le costanti utilizzate all'interno del device drive
 #include <linux/version.h> /* For LINUX_VERSION_CODE */
 #include <linux/workqueue.h>
 
-#define NUM_DEVICES 3  // TODO set to 128
-#define NUM_FLOWS 2    // TODO set to 128
+#define TEST
 
-// #define MAX_SIZE_BYTES 1048576  // Massima dimensione di byte mantenibili da un singolo device (1MB)
+#ifdef TEST
 #define MAX_SIZE_BYTES 128  // Utilizzato per debugging e testing
+#else
+#define MAX_SIZE_BYTES 1048576  // Massima dimensione di byte mantenibili da un singolo device (1MB)
+#endif
+
+#define NUM_DEVICES 128
+#define NUM_FLOWS 2
 
 #define LOW_PRIORITY 0
 #define HIGH_PRIORITY 1
@@ -37,7 +42,7 @@ Mantiene tutti i parametri e le costanti utilizzate all'interno del device drive
 #define READ_OP 2
 
 #define MODNAME "MULTI-FLOW DEV"
-#define DEVICE_NAME "test-dev" /* Device file name in /dev/ - not mandatory  */  // TODO cambiare nome
+#define DEVICE_NAME "mflow-dev"
 
 #define TEST_TIME 15000  // Tempo di attesa prima di rilasciare il lock nella fase di testing
 

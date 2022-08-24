@@ -9,7 +9,7 @@
 #include <sys/ioctl.h>
 #include <unistd.h>
 
-#define NUM_DEVICES 3  // TODO set to 128
+#define NUM_DEVICES 128
 
 #define DEVICE_ENABLING_PATH "/sys/module/test/parameters/device_enabling"
 #define TOTAL_BYTES_HIGH_PATH "/sys/module/test/parameters/total_bytes_high"
@@ -29,8 +29,8 @@
 #define LOCK_NOT_ACQUIRED -2
 #define NO_DATA_READ 0
 
-// #define MAX_SIZE_BYTES 1048576  // Massima dimensione di byte mantenibili da un singolo device (1MB)
-#define MAX_SIZE_BYTES 128  // Utilizzato per debugging e testing //TODO mettere 1MB
+#define MAX_SIZE_BYTES 1048576  // Massima dimensione di byte mantenibili da un singolo device (1MB)
+// #define MAX_SIZE_BYTES 128  // Utilizzato per debugging e testing
 
 /**
  * Lista di comandi utilizzabili

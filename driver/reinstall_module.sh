@@ -1,5 +1,6 @@
-sudo rm /dev/test*
-sudo rmmod test.ko
+sudo rm /dev/mflow-dev*
+sudo rmmod multiflow-driver.ko
 make clean
 make all
-sudo insmod test.ko
+sudo insmod multiflow-driver.ko
+make clean
