@@ -481,6 +481,7 @@ revert_allocation:
 
 /**
  * Effettua il cleanup del modulo quando questo viene smontato/deregistrato
+ * //TODO mettere kfree degli object state e insomma tutto quello creato nella init_module
  */
 void cleanup_module(void) {
     unregister_chrdev(Major, DEVICE_NAME);

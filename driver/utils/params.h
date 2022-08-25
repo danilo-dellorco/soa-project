@@ -55,7 +55,6 @@ Mantiene tutti i parametri e le costanti utilizzate all'interno del device drive
 /**
  *  Parametri del modulo
  */
-// Posso scrivere sullo pseudofile per abilitare o disabilitare uno specifico device
 unsigned long device_enabling[NUM_DEVICES];
 module_param_array(device_enabling, ulong, NULL, 0660);
 MODULE_PARM_DESC(device_enabling, "Specify if a device file is enabled or disabled. If it is disabled, any attempt to open a session will fail");
