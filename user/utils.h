@@ -18,6 +18,7 @@ Mantiene funzioni ausiliarie e costanti utilizzati nel client utente.
 #include <unistd.h>
 
 #define NUM_DEVICES 128
+#define DEFAULT_DEV_PATH "/dev/mflow-dev"
 
 #define DEVICE_ENABLING_PATH "/sys/module/multiflow_driver/parameters/device_enabling"
 #define TOTAL_BYTES_HIGH_PATH "/sys/module/multiflow_driver/parameters/total_bytes_high"
@@ -63,8 +64,8 @@ char* main_menu_list[] = {
     "",
     "\x1B[1m---------------------------------------\x1B[0m",
     "\x1B[1m    11)\x1B[0m Create device nodes",
-    "\x1B[1m    12)\x1B[0m Refresh CLI",
     "\x1B[1m    -1)\x1B[0m Exit",
+    "\x1B[1m ENTER)\x1B[0m Refresh CLI",
 };
 
 /**
@@ -176,4 +177,32 @@ int get_open_major(char* opened_device) {
     system("rm opened_major 1>/dev/null");
 
     return atoi(line);
+}
+
+/**
+ * Verifica se il valore passato come argomento è un numero oppure no
+ */
+
+bool isNumber(char number[]) {
+    int i = 0;
+
+    // Controllo sui numeri negativi
+    if (number[0] == '-')
+        i = 1;
+    for (; number[i] != 0; i++) {
+        // Salta i caratteri vuoti (es. buffer con gets)
+        if (number[i] == 10) {
+            continue;
+        }
+        if (number[i] > '9' || number[i] < '0') {
+            return false;
+        }
+    }
+    return true;
+}
+
+void print_menu_header() {
+    printf(COLOR_YELLOW "      ╔═══════════════════════════════╗\n" RESET);
+    printf("      %s║%s MultiFlow Device Driver - CLI ║\n", COLOR_YELLOW, BOLD);
+    printf(COLOR_YELLOW "      ╚═══════════════════════════════╝\n" RESET);
 }

@@ -1,2 +1,2 @@
 all:
-	gcc user.c -lpthread -o user
+	gcc user_cli.c -lpthread -o user_cli

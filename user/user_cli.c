@@ -1,6 +1,6 @@
 /*
 =====================================================================================================
-                                            user.c
+                                            user_cli.c
 -----------------------------------------------------------------------------------------------------
     Implementa una semplice Command Line Interface per interagire con i dispositivi tramite il
                                         multiflow-driver
@@ -52,12 +52,26 @@ void clear_buffer() {
  */
 int main(int argc, char** argv) {
     int ret;
-    if (argc < 3) {
-        printf("usage: sudo ./user DEVICE_PATH MAJOR\n");
+    if (argc != 2 && argc != 3) {
+        print_menu_header();
+        printf(COLOR_RED BOLD "> Launch error: wrong number of arguments\n" RESET);
+        printf(COLOR_GREEN "> USAGE: sudo ./user_cli MAJOR [DEVICE_PATH].\n" RESET);
         return -1;
     }
-    device_path = argv[1];
-    major = atoi(argv[2]);
+    if (isNumber(argv[1])) {
+        major = atoi(argv[1]);
+    } else {
+        print_menu_header();
+        printf(COLOR_RED BOLD "> Launch error: insert a numeric value for MAJOR.\n" RESET);
+        printf(COLOR_GREEN "> USAGE: sudo ./user_cli MAJOR [DEVICE_PATH].\n" RESET);
+        return -1;
+    }
+
+    if (argv[2] == 0) {
+        device_path = DEFAULT_DEV_PATH;
+    } else {
+        device_path = argv[2];
+    }
 
     while (1) {
         show_menu();
@@ -130,13 +144,21 @@ int main(int argc, char** argv) {
  * Apre una sessione verso un device file, specificato dall'utente tramite input da tastiera
  */
 int open_device() {
+    // Richiesta minor da aprire all'utente
     printf("Insert Minor Number of the device driver to open: ");
     fgets(data_buff, sizeof(data_buff), stdin);
-
-    if (atoi(data_buff) < 0 || atoi(data_buff) > 127) {
-        printf("Insert a valid minor, between 0 and 127");
-        return (-1);
+    if (strcmp(data_buff, "\n") == 0) {
+        printf("Operation canceled.\n");
+        return 0;
     }
+    if (!isNumber(data_buff)) {
+        printf(COLOR_RED "Insert a numeric value, between 0 and 127\n" RESET);
+        return -1;
+    } else if (atoi(data_buff) < 0 || atoi(data_buff) > 127) {
+        printf(COLOR_RED "Insert a valid minor, between 0 and 127\n" RESET);
+        return -1;
+    }
+
     int old_minor = minor;
     minor = atoi(data_buff);
     clear_buffer();
@@ -183,15 +205,22 @@ int open_device() {
  * Scrive i dati inseriti da stdin nel device attualmente aperto.
  */
 int write_op() {
+    int res;
+
     if (device_fd < 0) {
         printf(COLOR_RED "No device actually opened. Open a device first.\n" RESET);
         return -1;
     }
 
-    int res;
     clear_buffer();
+
     printf("Insert the data you want to write (max 4096): ");
     fgets(data_buff, sizeof(data_buff), stdin);
+    if (strcmp(data_buff, "\n") == 0) {
+        printf("Operation canceled.\n");
+        return 0;
+    }
+
     data_buff[strcspn(data_buff, "\n")] = 0;  // ignoring \n
 
     res = write(device_fd, data_buff, min(strlen(data_buff), 4096));
@@ -207,20 +236,29 @@ int write_op() {
  * Legge la quantità di byte desiderata dal device attualmente aperto
  */
 int read_op() {
+    int amount;
+    int res;
+
     if (device_fd < 0) {
-        printf(COLOR_RED "No device actually opened. Open a device first..\n" RESET);
+        printf(COLOR_RED "No device actually opened. Open a device first.\n" RESET);
         return NO_DEV;
     }
 
     printf("Insert the amount of data you want to read: ");
-    int amount;
-    int res;
     fgets(data_buff, sizeof(data_buff), stdin);
 
-    if (atoi(data_buff) < 0) {
-        printf("Insert a positive byte quantity to read\n");
+    if (strcmp(data_buff, "\n") == 0) {
+        printf("Operation canceled.\n");
+        return 0;
+    }
+    if (!isNumber(data_buff)) {
+        printf(COLOR_RED "Insert a numeric for how many bytes to read.\n" RESET);
+        return -1;
+    } else if (atoi(data_buff) < 0 || atoi(data_buff) > 127) {
+        printf(COLOR_RED "Insert a positive byte quantity to read.\n" RESET);
         return -1;
     }
+
     amount = atoi(data_buff);
 
     clear_buffer();
@@ -275,7 +313,14 @@ int show_menu() {
     printf(BOLD " > Insert your command: " RESET);
     fgets(data_buff, sizeof(data_buff), stdin);
     printf(COLOR_YELLOW "└───────────────────────────────────────────┘\n\n" RESET);
-    cmd = atoi(data_buff);
+
+    if (strcmp(data_buff, "\n") == 0) {
+        cmd = 12;
+    } else if (isNumber(data_buff)) {
+        cmd = atoi(data_buff);
+    } else {
+        cmd = 13;
+    }
     clear_buffer();
 }
 
@@ -325,20 +370,20 @@ int set_device_enabling(int status) {
     }
 
     // Richiesta all'utente del minor che si vuole abilitare/disabilitare
-    printf("Enter the minor number of the device to %s (-1 for currently opened device): ", op);
+    printf("Enter the minor number of the device to %s: ", op);
     fgets(data_buff, sizeof(data_buff), stdin);
-    minor_cmd = atoi(data_buff);
-    if (minor_cmd == -1) {
-        if (device_fd == -1) {
-            printf(COLOR_RED "No device actually opened. Open a device first.\n" RESET);
-            return -1;
-        }
-        minor_cmd = minor;
+    if (strcmp(data_buff, "\n") == 0) {
+        printf("Operation canceled.\n");
+        return 0;
     }
-    if (minor_cmd < -1 || minor_cmd > NUM_DEVICES - 1) {
-        printf(COLOR_RED "Insert a valid minor 0-127\n" RESET);
+    if (!isNumber(data_buff)) {
+        printf(COLOR_RED "Insert a numeric value, between 0 and 127\n" RESET);
+        return -1;
+    } else if (atoi(data_buff) < 0 || atoi(data_buff) > 127) {
+        printf(COLOR_RED "Insert a valid minor, between 0 and 127\n" RESET);
         return -1;
     }
+    minor_cmd = atoi(data_buff);
     clear_buffer();
 
     // Scrittura del valore 1/0 nel file device_enabling, alla posizione associata al minor
@@ -358,6 +403,17 @@ int show_device_status() {
 
     printf("Enter the minor number of the device: ");
     fgets(data_buff, sizeof(data_buff), stdin);
+    if (strcmp(data_buff, "\n") == 0) {
+        printf("Operation canceled.\n");
+        return 0;
+    }
+    if (!isNumber(data_buff)) {
+        printf(COLOR_RED "Insert a numeric value, between 0 and 127\n" RESET);
+        return -1;
+    } else if (atoi(data_buff) < 0 || atoi(data_buff) > 127) {
+        printf(COLOR_RED "Insert a valid minor, between 0 and 127\n" RESET);
+        return -1;
+    }
     minor_cmd = atoi(data_buff);
     clear_buffer();
     if (minor_cmd < 0 || minor_cmd > NUM_DEVICES - 1) {
@@ -375,7 +431,7 @@ int show_device_status() {
     }
     long available_space = MAX_SIZE_BYTES - read_param_field(TOTAL_BYTES_LOW_PATH, minor) - read_param_field(TOTAL_BYTES_HIGH_PATH, minor);
 
-    printf("│ %sOperativity:%s %s\n", BOLD, RESET, op);
+    printf("│ %sDevice Status :%s %s\n", BOLD, RESET, op);
     printf("│ %sAvailable Space:%s %ld bytes\n", BOLD, RESET, available_space);
     printf("│ %sHigh Priority Bytes:%s %d\n", BOLD, RESET, read_param_field(TOTAL_BYTES_HIGH_PATH, minor_cmd));
     printf("│ %sLow Priority Bytes:%s %d\n", BOLD, RESET, read_param_field(TOTAL_BYTES_LOW_PATH, minor_cmd));
@@ -405,21 +461,27 @@ int setup_session(int op) {
         printf("Insert timeout in milliseconds: ");
         fgets(data_buff, sizeof(data_buff), stdin);
 
-        if (atoi(data_buff) < 1) {
-            printf(COLOR_RED "Insert a positive (>0ms) timeout value\n" RESET);
+        if (strcmp(data_buff, "\n") == 0) {
+            printf("Operation canceled.\n");
+            return 0;
+        }
+        if (!isNumber(data_buff)) {
+            printf(COLOR_RED "Insert a numeric value for lock timeout.\n" RESET);
+            return -1;
+        } else if (atoi(data_buff) < 0) {
+            printf(COLOR_RED "Insert a positive value for timeout (>0ms).\n" RESET);
             return -1;
         }
+        timeout = atoi(data_buff);
+        session_timeout = timeout;
     }
-
     // Esecuzione di ioctl
-    timeout = atoi(data_buff);
     ret = ioctl(device_fd, op, timeout);
     if (ret == -1) {
         printf(COLOR_RED "Error executing ioctl\n" RESET);
         return -1;
     }
     printf(COLOR_GREEN "Session settings correctly changed\n" RESET);
-    session_timeout = timeout;
     return 0;
 }
 

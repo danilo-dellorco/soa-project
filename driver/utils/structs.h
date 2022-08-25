@@ -51,10 +51,10 @@ typedef struct _session_state {
  *  Struttura utilizzata nel meccanismo di deferred work
  */
 typedef struct _packed_work_struct {
-    const char *data;         // Puntatore ai dati
-    int minor;                // Minor number del device
-    size_t len;               // Lunghezza del buffer dati
-    session_state *session;   // Puntatore alla sessione verso il device su cui effettuare la scrittura
+    const char *data;         // Puntatore al buffer kernel temporaneo dove sono salvati i dati da scrivere poi sullo stream.
+    int minor;                // Minor number del device su cui si sta operando.
+    size_t len;               // Quantità di dati da scrivere, corrisponde alla lunghezza del buffer 'data'.
+    session_state *session;   // Puntatore alla sessione verso il device su cui effettuare la scrittura.
     struct work_struct work;  // Struttura di deferred work
 } packed_work_struct;
 
