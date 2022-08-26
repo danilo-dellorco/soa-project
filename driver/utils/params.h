@@ -51,6 +51,7 @@ Mantiene tutti i parametri e le costanti utilizzate all'interno del device drive
 #define READ_ERROR -1
 #define LOCK_NOT_ACQUIRED -1
 #define LOCK_ACQUIRED 0
+#define OPEN_ERROR -1
 
 /**
  *  Parametri del modulo

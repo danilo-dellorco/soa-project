@@ -390,6 +390,9 @@ int set_device_enabling(int status) {
     line[2 * minor_cmd] = s;
     fputs(line, handle);
     fclose(handle);
+    printf(COLOR_GREEN "Device file succesfully %sd.\n" RESET, op);
+
+    wait_input();
     return 0;
 }
 

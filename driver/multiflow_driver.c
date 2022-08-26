@@ -45,18 +45,18 @@ static int dev_open(struct inode *inode, struct file *file) {
 
     if (Minor >= NUM_DEVICES || Minor < 0) {
         printk("%s: minor %d not in (0,%d).\n", MODNAME, Minor, NUM_DEVICES - 1);
-        return -ENODEV;
+        return OPEN_ERROR;
     }
 
     if (device_enabling[Minor] == DISABLED) {
         printk("%s: device with minor %d is disabled, and cannot be opened.\n", MODNAME, Minor);
-        return -2;
+        return OPEN_ERROR;
     }
 
     session = kzalloc(sizeof(session_state), GFP_ATOMIC);
     if (session == NULL) {
         printk("%s: kzalloc error, unable to allocate session\n", MODNAME);
-        return -ENOMEM;
+        return OPEN_ERROR;
     }
 
     // Parametri di default per la nuova sessione
