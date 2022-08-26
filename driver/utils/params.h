@@ -59,8 +59,6 @@ unsigned long device_enabling[NUM_DEVICES];
 module_param_array(device_enabling, ulong, NULL, 0660);
 MODULE_PARM_DESC(device_enabling, "Specify if a device file is enabled or disabled. If it is disabled, any attempt to open a session will fail");
 
-// Non posso modificare manualmente il numero dei bytes o il numero di thread in attesa, in quanto sono informazioni controllate indirettamente dal modulo.
-// Posso comunque leggere lato utente queste informazioni.
 unsigned long total_bytes_low[NUM_DEVICES];
 module_param_array(total_bytes_low, ulong, NULL, 0440);
 MODULE_PARM_DESC(total_bytes_low, "Number of bytes yet to be read in the low priority flow.");

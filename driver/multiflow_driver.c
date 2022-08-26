@@ -65,7 +65,7 @@ static int dev_open(struct inode *inode, struct file *file) {
     session->timeout = 0;
     file->private_data = session;
 
-    printk("%s: Device file successfully opened for object with Minor %d\n", MODNAME, Minor);
+    printk("%s: Process %d successfully opened the device file with Minor %d\n", MODNAME, current->pid, Minor);
     return 0;
 }
 
@@ -76,7 +76,7 @@ static int dev_release(struct inode *inode, struct file *file) {
     session_state *session = file->private_data;
     kfree(session);
 
-    printk("%s: Device file %d closed\n", MODNAME, Minor);
+    printk("%s: Device file %d closed by process %d\n", MODNAME, Minor, current->pid);
     return 0;
 }
 
@@ -278,7 +278,7 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off) 
     }
 
     current_block = the_flow->head;
-    printk(KERN_INFO "%s: Read | start reading from head - block%d \n", MODNAME, current_block->id);
+    printk(KERN_INFO "%s: Start reading from head - block%d \n", MODNAME, current_block->id);
 
     // Non sono presenti dati nello stream, quindi viene rilasciato il lock e si ritorna al chiamante.
     if (current_block->stream_content == NULL) {
@@ -294,7 +294,7 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off) 
     // Ciclo in cui vengono letti i bytes richiesti dallo stream.
     while (1) {
         block_size = strlen(current_block->stream_content);
-        printk(KERN_INFO "%s: Read | iteration [to_read: %d, block_size: %ld, read_off: %d, bytes_read: %d]\n", MODNAME, to_read, block_size, current_block->read_offset, bytes_read);
+        printk(KERN_INFO "%s: Read iteration -> [to_read: %d, block_size: %ld, read_off: %d, bytes_read: %d]\n", MODNAME, to_read, block_size, current_block->read_offset, bytes_read);
 
         // Richiesta la lettura di più byte rispetto a quelli da leggere nel blocco corrente.
         if (block_size - current_block->read_offset < to_read) {
@@ -322,7 +322,7 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off) 
                 } else {
                     total_bytes_low[Minor] -= bytes_read;
                 }
-                printk("%s: Read | Read completed (1), read %d bytes\n", MODNAME, bytes_read);
+                printk("%s: Read completed (1), read %d bytes\n", MODNAME, bytes_read);
                 the_flow->head = current_block;
                 the_flow->tail = current_block;
                 mutex_unlock(&(the_flow->operation_synchronizer));
@@ -336,7 +336,7 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off) 
 
         // Il numero di byte richiesti sono presenti nel blocco corrente. Si copiano i byte nel buffer utente, si sblocca il mutex e si ritorna al chiamante.
         else {
-            printk(KERN_INFO "%s: Read | Partial reading in block%d\n", MODNAME, current_block->id);
+            printk(KERN_INFO "%s: Partial reading in block%d\n", MODNAME, current_block->id);
             ret = copy_to_user(&buff[bytes_read], &(current_block->stream_content[current_block->read_offset]), to_read);
             bytes_read += (to_read - ret);
             current_block->read_offset += (to_read - ret);
@@ -345,7 +345,7 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off) 
             } else {
                 total_bytes_low[Minor] -= bytes_read;
             }
-            printk("%s: Read | Read completed (2), read %d bytes\n", MODNAME, bytes_read);
+            printk("%s: Read completed (2), read %d bytes\n", MODNAME, bytes_read);
             mutex_unlock(&(the_flow->operation_synchronizer));
             wake_up(&the_flow->wait_queue);
             the_object->available_bytes += bytes_read;
@@ -373,32 +373,32 @@ static long dev_ioctl(struct file *filp, unsigned int command, unsigned long par
         case 3:
             session->priority = LOW_PRIORITY;
             printk(
-                "%s: ioctl(%u) | priority level setted to LOW on [%d,%d]\n",
-                MODNAME, command, Major, Minor);
+                "%s: ioctl(%u) | thread %d has set priority level to LOW on [%d,%d]\n",
+                MODNAME, command, current->pid, Major, Minor);
             break;
         case 4:
             session->priority = HIGH_PRIORITY;
             printk(
-                "%s: ioctl(%u) | priority level setted to HIGH on [%d,%d]\n",
-                MODNAME, command, Major, Minor);
+                "%s: ioctl(%u) | thread %d has set priority level to HIGH on [%d,%d]\n",
+                MODNAME, command, current->pid, Major, Minor);
             break;
         case 5:
             session->blocking = BLOCKING;
             printk(
-                "%s: ioctl(%u) | operation type setted to BLOCKING on [%d,%d]\n",
-                MODNAME, command, Major, Minor);
+                "%s: ioctl(%u) | thread %d has set operation type to BLOCKING on [%d,%d]\n",
+                MODNAME, command, current->pid, Major, Minor);
             break;
         case 6:
             session->blocking = NON_BLOCKING;
             printk(
-                "%s: ioctl(%u) | operation type setted to NON-BLOCKING on [%d,%d]\n",
-                MODNAME, command, Major, Minor);
+                "%s: ioctl(%u) | thread %d has set operation type to NON-BLOCKING on [%d,%d]\n",
+                MODNAME, command, current->pid, Major, Minor);
             break;
         case 7:
             session->timeout = param;
             printk(
-                "%s: ioctl(%u) | TIMEOUT value changed on [%d,%d]\n",
-                MODNAME, command, Major, Minor);
+                "%s: ioctl(%u) | thread %d has changed the TIMEOUT value on [%d,%d]\n",
+                MODNAME, command, current->pid, Major, Minor);
             break;
         // Implementation of enable/disable device using ioctl instead of writing to file
         // case 8:
@@ -415,8 +415,8 @@ static long dev_ioctl(struct file *filp, unsigned int command, unsigned long par
         //     break;
         default:
             printk(
-                "%s: ioctl(%u) | %u is an illegal command on [%d,%d]\n",
-                MODNAME, command, command, Major, Minor);
+                "%s: ioctl(%u) | thread %d has used an illegal command on [%d,%d]\n",
+                MODNAME, command, current->pid, Major, Minor);
     }
     return 0;
 }
@@ -437,8 +437,10 @@ static struct file_operations fops = {
  */
 int init_module(void) {
     int i, j;
+    printk("%s: -------------------------------------- INIT -------------------------------------------\n", MODNAME);
 
     // Inizializzazione dei dispositivi
+    printk(KERN_INFO "%s: Initializing Object State.\n", MODNAME);
     for (i = 0; i < NUM_DEVICES; i++) {
         for (j = 0; j < NUM_FLOWS; j++) {
             flow_state *object_flow = &objects[i].priority_flow[j];
@@ -461,6 +463,7 @@ int init_module(void) {
         device_enabling[i] = ENABLED;
         objects[i].available_bytes = MAX_SIZE_BYTES;
     }
+    printk(KERN_INFO "%s: Object State correctly Initialized.\n", MODNAME);
 
     // Registrazione del Char Device Driver
     Major = __register_chrdev(0, 0, 128, DEVICE_NAME, &fops);
@@ -469,10 +472,12 @@ int init_module(void) {
         return Major;
     }
     printk("%s: New device registered, it is assigned major number %d\n", MODNAME, Major);
+    printk("%s: ---------------------------------------------------------------------------------------\n", MODNAME);
+
     return 0;
 
 revert_allocation:
-    printk(KERN_INFO "revert allocation\n");
+    printk(KERN_INFO "Error allocating stream head block. Revert allocation\n");
     for (; i >= 0; i--) {
         kfree(&objects[i].priority_flow[j]);
     }
@@ -481,10 +486,36 @@ revert_allocation:
 
 /**
  * Effettua il cleanup del modulo quando questo viene smontato/deregistrato
- * //TODO mettere kfree degli object state e insomma tutto quello creato nella init_module
  */
 void cleanup_module(void) {
+    int i = 0;
+    int j = 0;
+    printk("%s: ------------------------------------- CLEAN -------------------------------------------\n", MODNAME);
+    printk(KERN_INFO "%s: Unregistering the device, releasing pending resources.\n", MODNAME);
+
+    // Rilascio delle risorse
+    for (i = 0; i < NUM_DEVICES; i++) {
+        for (j = 0; j < NUM_FLOWS; j++) {
+            flow_state *object_flow = &objects[i].priority_flow[j];
+            stream_block *current_block = object_flow->head;
+
+            // Deallocazione di tutti i blocchi dati dello stream.
+            while (current_block->stream_content != NULL) {
+                kfree(current_block->stream_content);
+                current_block = current_block->next;
+            }
+
+            // Deallocazione della struttura flow_state per i due flussi.
+            kfree(object_flow);
+        }
+        // Deallocazione della struttura object_state del device
+        kfree(&objects[i]);
+    }
+    printk(KERN_INFO "%s: Data stream memory & device metadata released.\n", MODNAME);
+
+    // Deregistrazione del Device.
     unregister_chrdev(Major, DEVICE_NAME);
-    printk(KERN_INFO "%s: new device unregistered, it was assigned major number %d\n", MODNAME, Major);
+    printk("%s: The device with major number %d has been unregistered.\n", MODNAME, Major);
+    printk("%s: ---------------------------------------------------------------------------------------\n", MODNAME);
     return;
 }

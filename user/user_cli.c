@@ -277,9 +277,7 @@ int read_op() {
  */
 int show_menu() {
     system("clear");
-    printf(COLOR_YELLOW "      ╔═══════════════════════════════╗\n" RESET);
-    printf("      %s║%s MultiFlow Device Driver - CLI ║\n", COLOR_YELLOW, BOLD);
-    printf(COLOR_YELLOW "      ╚═══════════════════════════════╝\n" RESET);
+    print_menu_header();
     printf(COLOR_YELLOW "┌───────────────────────────────────────────┐\n" RESET);
     printf("%s│%s%s Currently Opened Device:%s ", COLOR_YELLOW, RESET, BOLD, RESET);
     if (device_fd == -1) {
