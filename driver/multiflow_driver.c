@@ -86,7 +86,7 @@ static int dev_release(struct inode *inode, struct file *file) {
  *  - Per le operazioni a bassa priorità viene invocata la write_low che utilizza il meccanismo di deferred work. Il risultato della write viene
  *    comunque notificato in modo sincrono: per questo si verifica subito se c'è spazio sufficiente per la scrittura e viene subito aggiornato lo spazio rimanente.
  *
- *  - Per le operazioni ad alta priorità viene chiamata direttamente la write_on_stream, che internamente verifica lo spazio libero e cerca di prendere il lock.
+ *  - Per le operazioni ad alta priorità viene chiamata direttamente la write_on_stream, che internamente cerca di prendere il lock ed effettua la scrittura effettiva sul flusso.
  */
 static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t *off) {
     session_state *session = filp->private_data;
@@ -100,22 +100,24 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
     printk(KERN_INFO "%s: Called a %s %s write on dev [%d,%d]\n", MODNAME, get_prio_str(priority), get_block_str(blocking), Major, Minor);
     printk(KERN_INFO "%s: Write size: %ld bytes | Free space: %ld bytes\n", MODNAME, len, the_object->available_bytes);
 
-    // A bassa priorità verifico subito se la scrittura può avvenire e notifico l'utente in maniera sincrona. La write viene schedulata tramite deferred_work.
-    if (priority == LOW_PRIORITY) {
-        if (len > the_object->available_bytes) {
-            printk("%s: Write error, there is no enough space on dev [%d,%d].\n", MODNAME, Major, Minor);
-            return WRITE_ERROR;
-        }
-        written_bytes = write_low(buff, len, session, the_object);
-        the_object->available_bytes -= written_bytes;
-        total_bytes_low[Minor] += written_bytes;
+    // Verifico se c'è spazio sufficiente sul dispositivo per effettuare la scrittura.
+    if (len > the_object->available_bytes) {
+        printk("%s: Write error, there is no enough space on dev [%d,%d].\n", MODNAME, Major, Minor);
+        return WRITE_ERROR;
     }
 
-    // Ad alta priorità i controlli vengono effettuati al momento della write, che può fallire per lo spazio libero o per lock non acquisito.
-    else if (priority == HIGH_PRIORITY) {
+    // Ad alta priorità viene chiamata direttamente la write_on_stream, che internamente cerca di acquisire il lock sul dispositivo.
+    if (priority == HIGH_PRIORITY) {
         written_bytes = write_on_stream(buff, len, session, the_object);
         the_object->available_bytes -= written_bytes;
         total_bytes_high[Minor] += written_bytes;
+    }
+
+    // Nel flusso a bassa priorità si notifica subito all'utente se la scrittura può avvenire o meno. La write viene schedulata tramite deferred work, e per costruzione non può fallire.
+    else if (priority == LOW_PRIORITY) {
+        written_bytes = write_low(buff, len, session, the_object);
+        the_object->available_bytes -= written_bytes;
+        total_bytes_low[Minor] += written_bytes;
     }
     printk("%s: ---------------------------------------------------------------------------------------\n", MODNAME);
     return written_bytes;
@@ -128,18 +130,12 @@ ssize_t write_on_stream(const char *buff, size_t len, session_state *session, ob
     stream_block *current_block;
     stream_block *empty_block;
     flow_state *the_flow;
-
     char *block_buff;
     int ret;
-    int priority = session->priority;
+    int priority;
 
+    priority = session->priority;
     the_flow = &the_object->priority_flow[priority];
-
-    // Controllo sullo spazio libero nel dispositivo.
-    if (len > the_object->available_bytes) {
-        printk("%s: Write error, there is no enough space on dev [%d,%d].\n", MODNAME, Major, Minor);
-        return WRITE_ERROR;
-    }
 
     // Ottenimento del lock. In base al tipo di operazione high/low blocking/non-blocking si attende o meno.
     ret = try_mutex_lock(the_flow, session, Minor, WRITE_OP);
@@ -149,6 +145,8 @@ ssize_t write_on_stream(const char *buff, size_t len, session_state *session, ob
 
     // Creazione di un blocco vuoto per la scrittura successiva a quella attuale.
     empty_block = kzalloc(sizeof(stream_block), GFP_ATOMIC);
+
+    // Creazione del buffer kernel che conterrà i dati nel stream_block.
     block_buff = kzalloc(len + 1, GFP_ATOMIC);  // +1 per \n sui multipli di 8 bytes
 
     empty_block->next = NULL;
@@ -216,7 +214,7 @@ int write_low(const char *buff, size_t len, session_state *session, object_state
 
     printk(KERN_INFO "%s: Packed work_struct correctly allocated.\n", MODNAME);
 
-    // Inizializza la work_struct nella struttura packed, con function pointer a write_deferred
+    // Inizializza la work_struct nella struttura packed, specificando come lavoro da eseguire la write_deferred
     __INIT_WORK(&(packed_work->work), &write_deferred, (unsigned long)&(packed_work->work));
     schedule_work(&packed_work->work);
 
@@ -224,7 +222,7 @@ int write_low(const char *buff, size_t len, session_state *session, object_state
 }
 
 /**
- * Funzione schedulata da __INIT_WORK per effettuare la scrittura in modalità deferred.
+ * Funzione associata alla work_struct in __INIT_WORK, per effettuare la scrittura in modalità deferred.
  */
 void write_deferred(struct work_struct *deferred_work) {
     const char *buff;
@@ -362,52 +360,52 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off) 
  * 5)  Use BLOCKING operations
  * 6)  Use NON-BLOCKING
  * 7)  Set timeout
- * 8)  Enable a device file
- * 9)  Disable a device file
+ * 8)  Enable a device file  [UNUSED]
+ * 9)  Disable a device file [UNUSED]
  */
 static long dev_ioctl(struct file *filp, unsigned int command, unsigned long param) {
     session_state *session;
     session = filp->private_data;
 
     switch (command) {
-        case 3:
+        case SET_LOW_PRIORITY:
             session->priority = LOW_PRIORITY;
             printk(
                 "%s: ioctl(%u) | thread %d has set priority level to LOW on [%d,%d]\n",
                 MODNAME, command, current->pid, Major, Minor);
             break;
-        case 4:
+        case SET_HIGH_PRIORITY:
             session->priority = HIGH_PRIORITY;
             printk(
                 "%s: ioctl(%u) | thread %d has set priority level to HIGH on [%d,%d]\n",
                 MODNAME, command, current->pid, Major, Minor);
             break;
-        case 5:
+        case SET_BLOCKING_OP:
             session->blocking = BLOCKING;
             printk(
                 "%s: ioctl(%u) | thread %d has set operation type to BLOCKING on [%d,%d]\n",
                 MODNAME, command, current->pid, Major, Minor);
             break;
-        case 6:
+        case SET_NON_BLOCKING_OP:
             session->blocking = NON_BLOCKING;
             printk(
                 "%s: ioctl(%u) | thread %d has set operation type to NON-BLOCKING on [%d,%d]\n",
                 MODNAME, command, current->pid, Major, Minor);
             break;
-        case 7:
+        case SET_TIMEOUT:
             session->timeout = param;
             printk(
                 "%s: ioctl(%u) | thread %d has changed the TIMEOUT value on [%d,%d]\n",
                 MODNAME, command, current->pid, Major, Minor);
             break;
         // Implementation of enable/disable device using ioctl instead of writing to file
-        // case 8:
+        // case ENABLE_DEV:
         //     device_enabling[Minor] = ENABLED;
         //     printk(
         //         "%s: device [%d,%d] has been ENABLED \n",
         //         MODNAME, Major, Minor, command);
         //     break;
-        // case 9:
+        // case DISABLE_DEV:
         //     device_enabling[Minor] = DISABLED;
         //     printk(
         //         "%s: device [%d,%d] has been DISABLED \n",

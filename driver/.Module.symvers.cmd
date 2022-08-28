@@ -1,0 +1,1 @@
+cmd_/home/danilo/code/soa-project/driver/Module.symvers := sed 's/ko$$/o/' /home/danilo/code/soa-project/driver/modules.order | scripts/mod/modpost -m -a  -o /home/danilo/code/soa-project/driver/Module.symvers -e -i Module.symvers   -T -

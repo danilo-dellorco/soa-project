@@ -46,12 +46,21 @@ Mantiene tutti i parametri e le costanti utilizzate all'interno del device drive
 
 #define TEST_TIME 15000  // Tempo di attesa prima di rilasciare il lock nella fase di testing
 
+// Codici delle operazioni dev_ioctl
+#define SET_LOW_PRIORITY 3
+#define SET_HIGH_PRIORITY 4
+#define SET_BLOCKING_OP 5
+#define SET_NON_BLOCKING_OP 6
+#define SET_TIMEOUT 7
+#define ENABLE_DEV 8   // Attualmente non utilizzato
+#define DISABLE_DEV 9  // Attualmente non utilizzato
+
 // Codici di ritorno
+#define OPEN_ERROR -1
 #define WRITE_ERROR -1
 #define READ_ERROR -1
 #define LOCK_NOT_ACQUIRED -1
 #define LOCK_ACQUIRED 0
-#define OPEN_ERROR -1
 
 /**
  *  Parametri del modulo

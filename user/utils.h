@@ -17,18 +17,22 @@ Mantiene funzioni ausiliarie e costanti utilizzati nel client utente.
 #include <sys/ioctl.h>
 #include <unistd.h>
 
+// Numero di dispositivi gestibili dal client
 #define NUM_DEVICES 128
+
+// Path e nome di default utilizzato per i device file
 #define DEFAULT_DEV_PATH "/dev/mflow-dev"
 
+// Path dei parametri del modulo
 #define DEVICE_ENABLING_PATH "/sys/module/multiflow_driver/parameters/device_enabling"
 #define TOTAL_BYTES_HIGH_PATH "/sys/module/multiflow_driver/parameters/total_bytes_high"
 #define TOTAL_BYTES_LOW_PATH "/sys/module/multiflow_driver/parameters/total_bytes_low"
 #define WAITING_THREADS_HIGH_PATH "/sys/module/multiflow_driver/parameters/waiting_threads_high"
 #define WAITING_THREADS_LOW_PATH "/sys/module/multiflow_driver/parameters/waiting_threads_low"
 
+// Stringhe sulle impostazioni delle operazioni
 #define LOW_PRIORITY "Low"
 #define HIGH_PRIORITY "High"
-
 #define NON_BLOCKING "Non-Blocking"
 #define BLOCKING "Blocking"
 
@@ -38,8 +42,20 @@ Mantiene funzioni ausiliarie e costanti utilizzati nel client utente.
 #define LOCK_NOT_ACQUIRED -2
 #define NO_DATA_READ 0
 
-#define MAX_SIZE_BYTES 1048576  // Massima dimensione di byte mantenibili da un singolo device (1MB)
+// Massima dimensione di byte mantenibili da un singolo device (1MB)
+#define MAX_SIZE_BYTES 1048576
 // #define MAX_SIZE_BYTES 128  // Utilizzato per debugging e testing
+
+// Codici di formattazione su terminale
+#define COLOR_RED "\x1b[31m"
+#define COLOR_GREEN "\x1b[32m"
+#define COLOR_YELLOW "\x1b[33m"
+#define COLOR_BLUE "\x1b[34m"
+#define COLOR_MAGENTA "\x1b[35m"
+#define COLOR_CYAN "\x1b[36m"
+
+#define RESET "\x1B[0m"
+#define BOLD "\x1B[1m"
 
 /**
  * Lista di comandi utilizzabili
@@ -67,19 +83,6 @@ char* main_menu_list[] = {
     "\x1B[1m    -1)\x1B[0m Exit",
     "\x1B[1m ENTER)\x1B[0m Refresh CLI",
 };
-
-/**
- *  Codici di formattazione su terminale
- */
-#define COLOR_RED "\x1b[31m"
-#define COLOR_GREEN "\x1b[32m"
-#define COLOR_YELLOW "\x1b[33m"
-#define COLOR_BLUE "\x1b[34m"
-#define COLOR_MAGENTA "\x1b[35m"
-#define COLOR_CYAN "\x1b[36m"
-
-#define RESET "\x1B[0m"
-#define BOLD "\x1B[1m"
 
 /**
  * ------------------------------------------------------------
@@ -201,6 +204,9 @@ bool isNumber(char number[]) {
     return true;
 }
 
+/**
+ * Stampa l'header della CLI
+ */
 void print_menu_header() {
     printf(COLOR_YELLOW "      ╔═══════════════════════════════╗\n" RESET);
     printf("      %s║%s MultiFlow Device Driver - CLI ║\n", COLOR_YELLOW, BOLD);

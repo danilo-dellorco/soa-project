@@ -195,7 +195,8 @@ int open_device() {
     // Controllo se il file aperto ha un major differente da quello del client
     opened_major = get_open_major(opened_device);
     if (opened_major != major) {
-        printf("%s%s\nWarning: currently open device has major '%d' different than '%d' used by the CLI.%s\n", COLOR_YELLOW, BOLD, opened_major, major, RESET);
+        printf("%s%sWarning: currently opened device has major '%d' different than '%d' used by the CLI.%s\n", COLOR_YELLOW, BOLD, opened_major, major, RESET);
+        printf("%sChange the Major used by the client to '%d' or recreate the nodes with Major '%d'.%s\n", COLOR_YELLOW, opened_major, major, RESET);
     }
 
     return 0;
@@ -337,7 +338,8 @@ int create_nodes() {
             sprintf(data_buff, "%s%d", device_path, i);
             n++;
         } else {
-            printf("Device %s already exists. Skipping creation.\n", the_dev);
+            // Il nodo non viene creato se già esiste.
+            // printf("Device %s already exists. Skipping creation.\n", the_dev);
         }
     }
     printf(COLOR_GREEN "Succesfully created %d device files.\n" RESET, n);
