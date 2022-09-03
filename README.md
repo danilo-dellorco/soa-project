@@ -19,6 +19,7 @@ Devono essere implementati anche alcuni parametri del modulo Linux ed alcune fun
 La directory principale del progetto è `soa-project`, che mantiene al suo interno due directory driver e user.
 - `driver/`: contiene il codice `multiflow_driver.c` del modulo e lo script reinstall_module.sh, che permette di compilare ed installare rapidamente il modulo. 
 - `user/`: contiene il codice `user_cli.c` e l’eseguibile `user_cli` che implementa una semplice CLI per interagire con i dispositivi del driver.
+- `doc/`: contiene la documentazione sul progetto
 
 ## Montaggio e Rimozione del Modulo
 Per installare il modulo si può eseguire lo script `driver/reinstall_module.sh`. Nello specifico questo va a smontare eventuale versioni precedenti del modulo, compila l’ultima versione, e poi la installa nel sistema. 
