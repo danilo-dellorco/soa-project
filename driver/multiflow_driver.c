@@ -234,10 +234,11 @@ void write_deferred(struct work_struct *deferred_work) {
     size_t len = packed->len;
 
     buff = packed->data;
-    kfree(packed);
     get_lock(the_object, session, minor, LOCK);
     printk("%s: kworker daemon with PID=%d is processing the deferred write operation.\n", MODNAME, current->pid);
     write_on_stream(buff, len, session, &the_object->priority_flow[LOW_PRIORITY]);
+    kfree(packed);
+    kfree(buff);
 }
 
 // ------------------------------------------ READ OPERATION ----------------------------------------------
