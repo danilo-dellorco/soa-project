@@ -451,7 +451,7 @@ int init_module(void) {
             flow_state *object_flow = &objects[i].priority_flow[j];
             mutex_init(&(object_flow->operation_synchronizer));
 
-            // Allocazione per il primo blocco di stream
+            // Allocazione per il primo blocco dello stream
             object_flow->head = kzalloc(sizeof(stream_block), GFP_KERNEL);
             object_flow->head->id = 0;
             object_flow->tail = object_flow->head;
@@ -459,7 +459,9 @@ int init_module(void) {
             object_flow->head->stream_content = NULL;
             object_flow->head->read_offset = 0;
 
+            // Inizializzazione della waitqueue
             init_waitqueue_head(&object_flow->wait_queue);
+
             if (object_flow->head == NULL) goto revert_allocation;
         }
 
@@ -510,7 +512,7 @@ void cleanup_module(void) {
             }
         }
     }
-    printk(KERN_INFO "%s: Data stream memory & device metadata released.\n", MODNAME);
+    printk(KERN_INFO "%s: Data stream memory released.\n", MODNAME);
 
     // Deregistrazione del Device.
     unregister_chrdev(Major, DEVICE_NAME);
