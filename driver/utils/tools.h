@@ -29,20 +29,20 @@ int put_to_waitqueue(unsigned long timeout, struct mutex *mutex, wait_queue_head
         return 0;
     }
 
-    printk(KERN_INFO "%s: put_to_waitqueue | thread with pid %d will sleep for %lu ms\n", MODNAME, current->pid, timeout);
+    printk(KERN_INFO "%s: Thread %d will sleep for %lu ms\n", MODNAME, current->pid, timeout);
 
     // Si mette in sleep il processo finché la condizione non è True. La condizione viene verificata ogni volta che la waitqueue viene risvegliata.
     // Ritorna il numero di jiffies rimenenti (>=1) se la condizione viene verificata, 0 se resta False fino allo scadere del timeout
     val = wait_event_timeout(*wq, mutex_trylock(mutex), msecs_to_jiffies(timeout));
 
-    printk(KERN_INFO "%s: put_to_waitqueue | thread with pid %d awaken\n", MODNAME, current->pid);
+    printk(KERN_INFO "%s: Thread %d awaken\n", MODNAME, current->pid);
 
     // Non è stato acquisito il lock
     if (val == 0) {
-        printk("put_to_waitqueue | thread %d timeout elapsed. lock not acquired\n", current->pid);
+        printk("%s: Thread %d timeout elapsed. Lock not acquired\n", MODNAME, current->pid);
         return 0;
     }
-    printk("put_to_waitqueue | thread %d lock acquired\n", current->pid);
+    printk("%s: Thread %d lock succesfully acquired\n", MODNAME, current->pid);
 
     return 1;
 }
@@ -54,7 +54,7 @@ int put_to_waitqueue(unsigned long timeout, struct mutex *mutex, wait_queue_head
  * - Se l'operazione è bloccante ed il lock non viene acquisito, il task viene messo nella waitqueue.
  * Ritorna 0 se il lock viene acquisito correttamente, -1 se il lock non viene acquisito.
  */
-int get_lock(object_state *the_object, session_state *session, int minor, int op) {
+int get_lock(object_state *the_object, session_state *session, int minor, int lock_type) {
     int lock;
     int ret;
     int priority;
@@ -64,13 +64,13 @@ int get_lock(object_state *the_object, session_state *session, int minor, int op
     the_flow = &the_object->priority_flow[priority];
     wq = &the_flow->wait_queue;
 
-    // Una scrittura low priority non può fallire, quindi il processo attende attivamente di ottenere il lock. Infatti viene controllato prima se c'è spazio disponibile sul device.
-    if (priority == LOW_PRIORITY && op == WRITE_OP) {
-        printk(KERN_INFO "%s: try_mutex_lock | Low Priority - Process %d waiting to get lock.\n", MODNAME, current->pid);
+    // Una scrittura low priority non può fallire, quindi il processo attende attivamente di ottenere il lock prima della write_on_stream.
+    if (lock_type == LOCK) {
+        printk(KERN_INFO "%s: Process %d actively waiting to get lock.\n", MODNAME, current->pid);
         __sync_fetch_and_add(&waiting_threads_low[minor], 1);
         mutex_lock(&(the_flow->operation_synchronizer));
         __sync_fetch_and_add(&waiting_threads_low[minor], -1);
-        printk(KERN_INFO "%s: try_mutex_lock | Low Priority - Process %d acquired lock.\n", MODNAME, current->pid);
+        printk(KERN_INFO "%s: Process %d acquired lock.\n", MODNAME, current->pid);
         return LOCK_ACQUIRED;
     }
 
@@ -101,4 +101,13 @@ int get_lock(object_state *the_object, session_state *session, int minor, int op
 
     printk(KERN_INFO "%s: Lock succesfully acquired.\n", MODNAME);
     return LOCK_ACQUIRED;
+}
+
+/**
+ * Rilascia il mutex del flusso passato in input, e sveglia la relativa waitqueue.
+ */
+void release_lock(flow_state *the_flow) {
+    mutex_unlock(&(the_flow->operation_synchronizer));
+    wake_up(&the_flow->wait_queue);
+    printk(KERN_INFO "%s: Lock succesfully released.\n", MODNAME);
 }

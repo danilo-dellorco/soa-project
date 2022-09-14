@@ -255,7 +255,7 @@ int read_op() {
     if (!isNumber(data_buff)) {
         printf(COLOR_RED "Insert a numeric for how many bytes to read.\n" RESET);
         return -1;
-    } else if (atoi(data_buff) < 0 || atoi(data_buff) > 127) {
+    } else if (atoi(data_buff) < 0) {
         printf(COLOR_RED "Insert a positive byte quantity to read.\n" RESET);
         return -1;
     }
@@ -377,10 +377,12 @@ int set_device_enabling(int status) {
         return 0;
     }
     if (!isNumber(data_buff)) {
-        printf(COLOR_RED "Insert a numeric value, between 0 and 127\n" RESET);
+        printf(COLOR_RED "Insert a numeric value, between 0 and %d\n" RESET, NUM_DEVICES - 1);
+        wait_input();
         return -1;
-    } else if (atoi(data_buff) < 0 || atoi(data_buff) > 127) {
-        printf(COLOR_RED "Insert a valid minor, between 0 and 127\n" RESET);
+    } else if (atoi(data_buff) < 0 || atoi(data_buff) > NUM_DEVICES - 1) {
+        printf(COLOR_RED "Insert a valid minor, between 0 and %d\n" RESET, NUM_DEVICES - 1);
+        wait_input();
         return -1;
     }
     minor_cmd = atoi(data_buff);
@@ -411,18 +413,14 @@ int show_device_status() {
         return 0;
     }
     if (!isNumber(data_buff)) {
-        printf(COLOR_RED "Insert a numeric value, between 0 and 127\n" RESET);
+        printf(COLOR_RED "Insert a numeric value, between 0 and %d\n" RESET, NUM_DEVICES - 1);
         return -1;
-    } else if (atoi(data_buff) < 0 || atoi(data_buff) > 127) {
-        printf(COLOR_RED "Insert a valid minor, between 0 and 127\n" RESET);
+    } else if (atoi(data_buff) < 0 || atoi(data_buff) > NUM_DEVICES - 1) {
+        printf(COLOR_RED "Insert a valid minor, between 0 and %d\n" RESET, NUM_DEVICES - 1);
         return -1;
     }
     minor_cmd = atoi(data_buff);
     clear_buffer();
-    if (minor_cmd < 0 || minor_cmd > NUM_DEVICES - 1) {
-        printf(COLOR_RED "Insert a valid minor 0-127\n" RESET);
-        return -1;
-    }
 
     printf("┌───────────────────────────────────┐\n");
     printf("│%s   Device /dev/test-dev%d Status %s\n", BOLD, minor_cmd, RESET);

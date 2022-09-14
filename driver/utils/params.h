@@ -18,7 +18,7 @@ Mantiene tutti i parametri e le costanti utilizzate all'interno del device drive
 #include <linux/version.h> /* For LINUX_VERSION_CODE */
 #include <linux/workqueue.h>
 
-// #define TEST
+#define TEST
 
 #define MODNAME "MULTI-FLOW DEV"
 #define DEVICE_NAME "mflow-dev"
@@ -41,10 +41,6 @@ Mantiene tutti i parametri e le costanti utilizzate all'interno del device drive
 #define DISABLED 0
 #define ENABLED 1
 
-#define WRITE_OP 1
-#define READ_OP 2
-#define LOW_UPDATE 3
-
 #define TEST_TIME 15000  // Tempo di attesa prima di rilasciare il lock nella fase di testing
 
 // Codici delle operazioni dev_ioctl
@@ -62,6 +58,11 @@ Mantiene tutti i parametri e le costanti utilizzate all'interno del device drive
 #define READ_ERROR -1
 #define LOCK_NOT_ACQUIRED -1
 #define LOCK_ACQUIRED 0
+#define SCHED_ERROR -1
+
+// Modalità di locking in get_lock
+#define TRYLOCK 1
+#define LOCK 2
 
 /**
  *  Parametri del modulo
