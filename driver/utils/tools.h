@@ -54,17 +54,20 @@ int put_to_waitqueue(unsigned long timeout, struct mutex *mutex, wait_queue_head
  * - Se l'operazione è bloccante ed il lock non viene acquisito, il task viene messo nella waitqueue.
  * Ritorna 0 se il lock viene acquisito correttamente, -1 se il lock non viene acquisito.
  */
-int try_mutex_lock(flow_state *the_flow, session_state *session, int minor, int op) {
+int get_lock(object_state *the_object, session_state *session, int minor, int op) {
     int lock;
     int ret;
+    int priority;
     wait_queue_head_t *wq;
-    int priority = session->priority;
+    flow_state *the_flow;
+    priority = session->priority;
+    the_flow = &the_object->priority_flow[priority];
     wq = &the_flow->wait_queue;
 
     // Una scrittura low priority non può fallire, quindi il processo attende attivamente di ottenere il lock. Infatti viene controllato prima se c'è spazio disponibile sul device.
     if (priority == LOW_PRIORITY && op == WRITE_OP) {
         printk(KERN_INFO "%s: try_mutex_lock | Low Priority - Process %d waiting to get lock.\n", MODNAME, current->pid);
-        __sync_fetch_and_add(&waiting_threads_low[minor], 1);  // Necessario per evitare out-of-order
+        __sync_fetch_and_add(&waiting_threads_low[minor], 1);
         mutex_lock(&(the_flow->operation_synchronizer));
         __sync_fetch_and_add(&waiting_threads_low[minor], -1);
         printk(KERN_INFO "%s: try_mutex_lock | Low Priority - Process %d acquired lock.\n", MODNAME, current->pid);

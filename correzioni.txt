@@ -1,0 +1,4 @@
+kfree dev_release sessione:
+CONSIGLIO PROF: reference counter sul numero di processi con sessione aperta verso il file
+MIA CONSIDERAZIONE: Non vado a liberare la struttura file, ma solo la session_state che tiene traccia dei parametri low, high etc
+--> E' giusto così 

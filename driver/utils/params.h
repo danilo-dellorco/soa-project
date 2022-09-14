@@ -43,6 +43,7 @@ Mantiene tutti i parametri e le costanti utilizzate all'interno del device drive
 
 #define WRITE_OP 1
 #define READ_OP 2
+#define LOW_UPDATE 3
 
 #define TEST_TIME 15000  // Tempo di attesa prima di rilasciare il lock nella fase di testing
 

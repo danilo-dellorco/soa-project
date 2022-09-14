@@ -22,8 +22,8 @@ static int dev_open(struct inode *, struct file *);
 static int dev_release(struct inode *, struct file *);
 static ssize_t dev_write(struct file *, const char *, size_t, loff_t *);
 
-ssize_t write_on_stream(const char *buff, size_t len, session_state *session, object_state *the_object);
-int write_low(const char *buff, size_t len, session_state *session, object_state *the_object);
+ssize_t write_on_stream(const char *buff, size_t len, session_state *session, flow_state *the_flow);
+int schedule_write(const char *buff, size_t len, session_state *session, object_state *the_object);
 void write_deferred(struct work_struct *deferred_work);
 
 static int Major;
@@ -73,9 +73,7 @@ static int dev_open(struct inode *inode, struct file *file) {
  * Invocata dal VFS quando si chiude il file.
  */
 static int dev_release(struct inode *inode, struct file *file) {
-    session_state *session = file->private_data;
-    kfree(session);
-
+    kfree(file->private_data);
     printk("%s: Device file %d closed by process %d\n", MODNAME, Minor, current->pid);
     return 0;
 }
@@ -93,31 +91,51 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
     int priority = session->priority;
     int blocking = session->blocking;
     ssize_t written_bytes = 0;
+    int lock;
 
     object_state *the_object;
+    flow_state *the_flow;
     the_object = &objects[Minor];
+    the_flow = &the_object->priority_flow[priority];
+
     printk("%s: ------------------------------------- WRITE -------------------------------------------\n", MODNAME);
     printk(KERN_INFO "%s: Called a %s %s write on dev [%d,%d]\n", MODNAME, get_prio_str(priority), get_block_str(blocking), Major, Minor);
     printk(KERN_INFO "%s: Write size: %ld bytes | Free space: %ld bytes\n", MODNAME, len, the_object->available_bytes);
 
-    // Verifico se c'è spazio sufficiente sul dispositivo per effettuare la scrittura.
-    if (len > the_object->available_bytes) {
-        printk("%s: Write error, there is no enough space on dev [%d,%d].\n", MODNAME, Major, Minor);
-        return WRITE_ERROR;
-    }
+    // Ottenimento del lock. In base al tipo di operazione high/low blocking/non-blocking si attende o meno.
 
-    // Ad alta priorità viene chiamata direttamente la write_on_stream, che internamente cerca di acquisire il lock sul dispositivo.
+    // TODO aggiornamento non atomico delle informazioni.
+    // Ad alta priorità viene chiamata direttamente la write_on_stream, dopo aver ottenuto il lock.
     if (priority == HIGH_PRIORITY) {
-        written_bytes = write_on_stream(buff, len, session, the_object);
+        lock = get_lock(the_object, session, Minor, WRITE_OP);
+        if (lock == LOCK_NOT_ACQUIRED) {
+            printk("%s: Write error, unable to get lock on dev [%d,%d].\n", MODNAME, Major, Minor);
+            return WRITE_ERROR;
+        }
+        written_bytes = write_on_stream(buff, len, session, the_flow);
         the_object->available_bytes -= written_bytes;
         total_bytes_high[Minor] += written_bytes;
+#ifdef TEST
+        printk(KERN_DEBUG "%s: [TEST] waiting %d msec to release write lock\n", MODNAME, TEST_TIME);
+        msleep(TEST_TIME);
+#endif
+        mutex_unlock(&(the_flow->operation_synchronizer));
+        wake_up(&the_flow->wait_queue);
+
     }
 
     // Nel flusso a bassa priorità si notifica subito all'utente se la scrittura può avvenire o meno. La write viene schedulata tramite deferred work, e per costruzione non può fallire.
     else if (priority == LOW_PRIORITY) {
-        written_bytes = write_low(buff, len, session, the_object);
+        lock = get_lock(the_object, session, Minor, LOW_UPDATE);
+        if (lock == LOCK_NOT_ACQUIRED) {
+            printk("%s: Write error, unable to get lock on dev [%d,%d].\n", MODNAME, Major, Minor);
+            return WRITE_ERROR;
+        }
+        written_bytes = schedule_write(buff, len, session, the_object);
         the_object->available_bytes -= written_bytes;
         total_bytes_low[Minor] += written_bytes;
+        mutex_unlock(&(the_flow->operation_synchronizer));
+        wake_up(&the_flow->wait_queue);
     }
     printk("%s: ---------------------------------------------------------------------------------------\n", MODNAME);
     return written_bytes;
@@ -126,22 +144,11 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
 /**
  * Esegue la scrittura effettiva sullo stream di dati, scegliendo il flusso specifico in base alla priorità della scrittura.
  */
-ssize_t write_on_stream(const char *buff, size_t len, session_state *session, object_state *the_object) {
+ssize_t write_on_stream(const char *buff, size_t len, session_state *session, flow_state *the_flow) {
     stream_block *current_block;
     stream_block *empty_block;
-    flow_state *the_flow;
     char *block_buff;
     int ret;
-    int priority;
-
-    priority = session->priority;
-    the_flow = &the_object->priority_flow[priority];
-
-    // Ottenimento del lock. In base al tipo di operazione high/low blocking/non-blocking si attende o meno.
-    ret = try_mutex_lock(the_flow, session, Minor, WRITE_OP);
-    if (ret == LOCK_NOT_ACQUIRED) {
-        return WRITE_ERROR;
-    }
 
     // Creazione di un blocco vuoto per la scrittura successiva a quella attuale.
     empty_block = kzalloc(sizeof(stream_block), GFP_ATOMIC);
@@ -170,14 +177,7 @@ ssize_t write_on_stream(const char *buff, size_t len, session_state *session, ob
     current_block->next = empty_block;
     the_flow->tail = empty_block;
 
-    // Sblocco del mutex e notifica del risultato.
-#ifdef TEST
-    printk(KERN_DEBUG "%s: [TEST] waiting %d msec to release write lock\n", MODNAME, TEST_TIME);
-    msleep(TEST_TIME);
-#endif
-    mutex_unlock(&(the_flow->operation_synchronizer));
-    wake_up(&the_flow->wait_queue);
-    printk("%s: Lock released. Written %ld bytes in block %d: '%s'\n", MODNAME, strlen(current_block->stream_content), current_block->id, current_block->stream_content);
+    printk("%s: Written %ld bytes in block %d: '%s'\n", MODNAME, strlen(current_block->stream_content), current_block->id, current_block->stream_content);
     return len - ret;
 }
 
@@ -185,10 +185,16 @@ ssize_t write_on_stream(const char *buff, size_t len, session_state *session, ob
  * Effettua la scrittura sul flusso a bassa priorità. Copia i dati utente da scrivere in un buffer kernel temporaneo,
  * che verrà immesso effettivamente nello stream soltanto quando verrà schedulata la write_deferred.
  */
-int write_low(const char *buff, size_t len, session_state *session, object_state *the_object) {
+int schedule_write(const char *buff, size_t len, session_state *session, object_state *the_object) {
     int ret;
     packed_work_struct *packed_work;
     printk("%s: Deferred work requested.\n", MODNAME);
+
+    // Verifico se c'è spazio sufficiente sul dispositivo per effettuare la scrittura.
+    if (len > the_object->available_bytes) {
+        printk("%s: Write error, there is no enough space on dev [%d,%d].\n", MODNAME, Major, Minor);
+        return WRITE_ERROR;
+    }
 
     packed_work = kzalloc(sizeof(packed_work_struct), GFP_ATOMIC);
     if (packed_work == NULL) {
@@ -233,9 +239,10 @@ void write_deferred(struct work_struct *deferred_work) {
     size_t len = packed->len;
 
     buff = packed->data;
+    kfree(packed);
 
     printk("%s: kworker daemon with PID=%d is processing the deferred write operation.\n", MODNAME, current->pid);
-    write_on_stream(buff, len, session, the_object);
+    write_on_stream(buff, len, session, &the_object->priority_flow[LOW_PRIORITY]);
 }
 
 // ------------------------------------------ READ OPERATION ----------------------------------------------
@@ -270,7 +277,7 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off) 
     printk(KERN_INFO "%s: Called a %s %s read of %ld bytes on dev [%d,%d]\n", MODNAME, get_prio_str(priority), get_block_str(blocking), len, Major, Minor);
 
     // Ottenimento del lock. In base al tipo di operazione blocking/non-blocking si attende o meno.
-    ret = try_mutex_lock(the_flow, session, Minor, READ_OP);
+    ret = get_lock(the_object, session, Minor, READ_OP);
     if (ret < 0) {
         return READ_ERROR;
     }
@@ -442,7 +449,6 @@ int init_module(void) {
     for (i = 0; i < NUM_DEVICES; i++) {
         for (j = 0; j < NUM_FLOWS; j++) {
             flow_state *object_flow = &objects[i].priority_flow[j];
-
             mutex_init(&(object_flow->operation_synchronizer));
 
             // Allocazione per il primo blocco di stream
@@ -477,7 +483,7 @@ int init_module(void) {
 revert_allocation:
     printk(KERN_INFO "Error allocating stream head block. Revert allocation\n");
     for (; i >= 0; i--) {
-        kfree(&objects[i].priority_flow[j]);
+        kfree(&objects[i].priority_flow[j].head);
     }
     return -ENOMEM;
 }
@@ -502,12 +508,7 @@ void cleanup_module(void) {
                 kfree(current_block->stream_content);
                 current_block = current_block->next;
             }
-
-            // Deallocazione della struttura flow_state per i due flussi.
-            kfree(object_flow);
         }
-        // Deallocazione della struttura object_state del device
-        kfree(&objects[i]);
     }
     printk(KERN_INFO "%s: Data stream memory & device metadata released.\n", MODNAME);
 
