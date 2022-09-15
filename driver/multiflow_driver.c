@@ -159,31 +159,34 @@ ssize_t write_on_stream(const char *buff, size_t len, session_state *session, fl
     // - LOW write : buff è il buffer temporaneo in kernel-space scritto nella write_low, quindi si assegna semplicemente il suo contenuto.
     if (session->priority == HIGH_PRIORITY) {
         block_buff = kzalloc(len + 1, GFP_ATOMIC);
+        empty_block = kzalloc(sizeof(stream_block), GFP_ATOMIC);
         ret = copy_from_user(block_buff, buff, len);
     } else if (session->priority == LOW_PRIORITY) {
         block_buff = (char *)buff;
         ret = 0;
     }
-
-    // Creazione di un blocco vuoto per la scrittura successiva a quella attuale.
-    empty_block = kzalloc(sizeof(stream_block), GFP_ATOMIC);
-    empty_block->next = NULL;
-    empty_block->stream_content = NULL;
-
-    // Si aggiunge il blocco in coda allo stream e si aggiorna il puntatore al blocco successivo su quello vuoto.
     current_block = the_flow->tail;
-    empty_block->id = current_block->id + 1;
-
     current_block->stream_content = block_buff;
-    current_block->next = empty_block;
-    the_flow->tail = empty_block;
+
+    // Creazione di un blocco vuoto per la scrittura successiva a quella attuale. Il blocco viene messo in coda allo stream.
+    printk("sizeof: %ld\n", sizeof(stream_block));
+    if (empty_block == NULL) {
+        printk("%s: Warning! New Block allocation failure, no more kernel memory for next writes.\n", MODNAME);
+    } else {
+        empty_block->next = NULL;
+        empty_block->stream_content = NULL;
+        empty_block->id = current_block->id + 1;
+
+        current_block->next = empty_block;
+        the_flow->tail = empty_block;
+    }
 
     printk("%s: Written %ld bytes in block %d: '%s'\n", MODNAME, strlen(current_block->stream_content), current_block->id, current_block->stream_content);
     return len - ret;
 }
 
 /**
- * Effettua la scrittura sul flusso a bassa priorità. Copia i dati utente da scrivere in un buffer kernel temporaneo,
+ * Schedula la scrittura sul flusso a bassa priorità. Copia i dati utente da scrivere in un buffer kernel temporaneo,
  * che verrà immesso effettivamente nello stream soltanto quando verrà schedulata la write_deferred.
  */
 int schedule_write(const char *buff, size_t len, session_state *session, object_state *the_object) {
@@ -203,7 +206,13 @@ int schedule_write(const char *buff, size_t len, session_state *session, object_
 
     packed_work->data = kzalloc(len + 1, GFP_ATOMIC);
     if (packed_work->data == NULL) {
-        printk("%s: Packet work_struct data allocation failure\n", MODNAME);
+        printk("%s: Packed work_struct data allocation failure\n", MODNAME);
+        return SCHED_ERROR;
+    }
+
+    packed_work->new_block = kzalloc(sizeof(stream_block), GFP_ATOMIC);
+    if (packed_work->new_block == NULL) {
+        printk("%s: Packed work_struct new block allocation failure\n", MODNAME);
         return SCHED_ERROR;
     }
 
@@ -234,8 +243,8 @@ void write_deferred(struct work_struct *deferred_work) {
     size_t len = packed->len;
 
     buff = packed->data;
-    get_lock(the_object, session, minor, LOCK);
     printk("%s: kworker daemon with PID=%d is processing the deferred write operation.\n", MODNAME, current->pid);
+    get_lock(the_object, session, minor, LOCK);
     write_on_stream(buff, len, session, &the_object->priority_flow[LOW_PRIORITY]);
     kfree(packed);
     kfree(buff);

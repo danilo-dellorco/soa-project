@@ -18,7 +18,7 @@ Mantiene tutti i parametri e le costanti utilizzate all'interno del device drive
 #include <linux/version.h> /* For LINUX_VERSION_CODE */
 #include <linux/workqueue.h>
 
-#define TEST
+// #define TEST
 
 #define MODNAME "MULTI-FLOW DEV"
 #define DEVICE_NAME "mflow-dev"
