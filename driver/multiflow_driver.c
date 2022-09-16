@@ -22,7 +22,7 @@ static int dev_open(struct inode *, struct file *);
 static int dev_release(struct inode *, struct file *);
 static ssize_t dev_write(struct file *, const char *, size_t, loff_t *);
 
-ssize_t write_on_stream(const char *buff, size_t len, session_state *session, flow_state *the_flow);
+ssize_t write_on_stream(const char *buff, size_t len, flow_state *the_flow);
 int schedule_write(const char *buff, size_t len, session_state *session, object_state *the_object);
 void write_deferred(struct work_struct *deferred_work);
 
@@ -111,7 +111,6 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
 
     if (lock == LOCK_NOT_ACQUIRED) {
         printk("%s: Write error, unable to get lock on dev [%d,%d].\n", MODNAME, Major, Minor);
-        release_lock(the_flow);
         return WRITE_ERROR;
     }
 
@@ -123,9 +122,8 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
 
     // Ad alta priorità viene chiamata direttamente la write_on_stream, dopo aver ottenuto il lock e controllato che lo spazio sia sufficiente.
     if (priority == HIGH_PRIORITY) {
-        written_bytes = write_on_stream(buff, len, session, the_flow);
-        the_object->available_bytes -= written_bytes;
-        total_bytes_high[Minor] += written_bytes;
+        written_bytes = write_on_stream(buff, len, the_flow);
+
 #ifdef TEST
         printk(KERN_DEBUG "%s: [TEST] waiting %d msec to release write lock\n", MODNAME, TEST_TIME);
         msleep(TEST_TIME);
@@ -135,10 +133,6 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
     // Nel flusso a bassa priorità si notifica subito all'utente se la scrittura può avvenire o meno. La write viene schedulata tramite deferred work, e per costruzione non può fallire.
     else if (priority == LOW_PRIORITY) {
         written_bytes = schedule_write(buff, len, session, the_object);
-        if (written_bytes != SCHED_ERROR) {
-            the_object->available_bytes -= written_bytes;
-            total_bytes_low[Minor] += written_bytes;
-        }
     }
     release_lock(the_flow);
     printk("%s: ---------------------------------------------------------------------------------------\n", MODNAME);
@@ -148,40 +142,41 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
 /**
  * Esegue la scrittura effettiva sullo stream di dati, scegliendo il flusso specifico in base alla priorità della scrittura.
  */
-ssize_t write_on_stream(const char *buff, size_t len, session_state *session, flow_state *the_flow) {
+ssize_t write_on_stream(const char *buff, size_t len, flow_state *the_flow) {
     stream_block *current_block;
     stream_block *empty_block;
     char *block_buff;
     int ret;
 
-    // Copia dei bytes da scrivere nel block_buff del dispositivo.
-    // - HIGH write: buff è un buffer in user-space, quindi si usa la copy_from_user
-    // - LOW write : buff è il buffer temporaneo in kernel-space scritto nella write_low, quindi si assegna semplicemente il suo contenuto.
-    if (session->priority == HIGH_PRIORITY) {
-        block_buff = kzalloc(len + 1, GFP_ATOMIC);
-        empty_block = kzalloc(sizeof(stream_block), GFP_ATOMIC);
-        ret = copy_from_user(block_buff, buff, len);
-    } else if (session->priority == LOW_PRIORITY) {
-        block_buff = (char *)buff;
-        ret = 0;
+    // Allocazione delle strutture necessarie alla scrittura
+    block_buff = kzalloc(len + 1, GFP_ATOMIC);
+    if (block_buff == NULL) {
+        printk("%s: Data buffer allocation error.\n", MODNAME);
+        return WRITE_ERROR;
     }
+    empty_block = kzalloc(sizeof(stream_block), GFP_ATOMIC);
+    if (packed_work->new_block == NULL) {
+        printk("%s: New block allocation error.\n", MODNAME);
+        return SCHED_ERROR;
+    }
+
+    // Copia dei bytes da scrivere nel stream_block del dispositivo.
+    ret = copy_from_user(block_buff, buff, len);
     current_block = the_flow->tail;
     current_block->stream_content = block_buff;
 
     // Creazione di un blocco vuoto per la scrittura successiva a quella attuale. Il blocco viene messo in coda allo stream.
-    printk("sizeof: %ld\n", sizeof(stream_block));
-    if (empty_block == NULL) {
-        printk("%s: Warning! New Block allocation failure, no more kernel memory for next writes.\n", MODNAME);
-    } else {
-        empty_block->next = NULL;
-        empty_block->stream_content = NULL;
-        empty_block->id = current_block->id + 1;
+    empty_block->next = NULL;
+    empty_block->stream_content = NULL;
+    empty_block->id = current_block->id + 1;
 
-        current_block->next = empty_block;
-        the_flow->tail = empty_block;
-    }
+    current_block->next = empty_block;
+    the_flow->tail = empty_block;
 
-    printk("%s: Written %ld bytes in block %d: '%s'\n", MODNAME, strlen(current_block->stream_content), current_block->id, current_block->stream_content);
+    // Aggiornamento del numero di bytes disponibili
+    the_object->available_bytes -= (len - ret);
+    total_bytes_high[Minor] += (len - ret);
+    printk("%s: Written %ld/%ld bytes in block %d: '%s'\n", MODNAME, strlen(current_block->stream_content), len, current_block->id, current_block->stream_content);
     return len - ret;
 }
 
@@ -204,23 +199,28 @@ int schedule_write(const char *buff, size_t len, session_state *session, object_
     packed_work->session = session;
     packed_work->minor = Minor;
 
+    // Allocazione delle strutture per effettuare la scrittura successivamente
     packed_work->data = kzalloc(len + 1, GFP_ATOMIC);
     if (packed_work->data == NULL) {
         printk("%s: Packed work_struct data allocation failure\n", MODNAME);
         return SCHED_ERROR;
     }
-
     packed_work->new_block = kzalloc(sizeof(stream_block), GFP_ATOMIC);
     if (packed_work->new_block == NULL) {
         printk("%s: Packed work_struct new block allocation failure\n", MODNAME);
         return SCHED_ERROR;
     }
 
+    // Copia dei dati da scrivere nel buffer
     ret = copy_from_user((char *)packed_work->data, buff, len);
     if (ret != 0) {
         printk("%s: Packed work_struct data copy failure.\n", MODNAME);
         return SCHED_ERROR;
     }
+
+    // Riservo logicamente lo spazio libero sul dispositivo
+    the_object->available_bytes -= written_bytes;
+    total_bytes_low[Minor] += written_bytes;
 
     printk(KERN_INFO "%s: Packed work_struct correctly allocated.\n", MODNAME);
 
@@ -235,19 +235,38 @@ int schedule_write(const char *buff, size_t len, session_state *session, object_
  * Funzione associata alla work_struct in __INIT_WORK, per effettuare la scrittura in modalità deferred.
  */
 void write_deferred(struct work_struct *deferred_work) {
-    const char *buff;
+    // Ottenimento del lock tramite mutex_lock
+    printk("%s: kworker daemon with PID=%d is processing the deferred write operation.\n", MODNAME, current->pid);
+    get_lock(the_object, session, minor, LOCK);
+
     packed_work_struct *packed = container_of(deferred_work, packed_work_struct, work);
     int minor = packed->minor;
     session_state *session = packed->session;
     object_state *the_object = &objects[minor];
+    flow_state *the_flow = &the_object->priority_flow[LOW_PRIORITY];
     size_t len = packed->len;
 
-    buff = packed->data;
-    printk("%s: kworker daemon with PID=%d is processing the deferred write operation.\n", MODNAME, current->pid);
-    get_lock(the_object, session, minor, LOCK);
-    write_on_stream(buff, len, session, &the_object->priority_flow[LOW_PRIORITY]);
+    stream_block *current_block;
+    stream_block *empty_block;
+
+    // Si scrivono i dati sul flusso
+    current_block = the_flow->tail;
+    current_block->stream_content = (char *)packed->data;
+
+    // Si inizializza il blocco vuoto
+    empty_block = packed->new_block;
+    empty_block->next = NULL;
+    empty_block->stream_content = NULL;
+    empty_block->id = current_block->id + 1;
+
+    // Si aggiunge il blocco vuoto in coda allo stream.
+    current_block->next = empty_block;
+    the_flow->tail = empty_block;
+
+    printk("%s: Written %ld/%ld bytes in block %d: '%s'\n", MODNAME, strlen(current_block->stream_content), len, current_block->id, current_block->stream_content);
+
     kfree(packed);
-    kfree(buff);
+    release_lock(the_flow);
 }
 
 // ------------------------------------------ READ OPERATION ----------------------------------------------
@@ -333,8 +352,8 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off) 
                 printk("%s: Read completed (1), read %d bytes\n", MODNAME, bytes_read);
                 the_flow->head = current_block;
                 the_flow->tail = current_block;
-                release_lock(the_flow);
                 the_object->available_bytes += bytes_read;
+                release_lock(the_flow);
                 printk("%s: ---------------------------------------------------------------------------------------\n", MODNAME);
 
                 return bytes_read;

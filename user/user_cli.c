@@ -253,7 +253,7 @@ int read_op() {
         return 0;
     }
     if (!isNumber(data_buff)) {
-        printf(COLOR_RED "Insert a numeric for how many bytes to read.\n" RESET);
+        printf(COLOR_RED "Insert a numeric value for bytes to read.\n" RESET);
         return -1;
     } else if (atoi(data_buff) < 0) {
         printf(COLOR_RED "Insert a positive byte quantity to read.\n" RESET);
