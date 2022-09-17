@@ -30,14 +30,11 @@
     - Il parametro `lock_type` specifica se è necessario usare `mutex_lock` o `mutex_trylock`.
     - Le scritture low priority specificano `LOCK` per attendere il lock.
     - Tutte le altre operazioni sincrone specificano `TRYLOCK`. Se il lock non è disponibile si vede se l'operazione è bloccante o non-bloccante.
-
-  - **Migliorato cleanup del modulo**
-    - Rimosse `kfree` errate
-    - Deallocazione dei blocchi stream rimanenti
+  
+  - **Separata `write_on_stream` e `write_deferred`.**
+    - Le scritture high e low vengono fatte ora in due api separate.
+    - Tutto lo spazio necessario alla scrittura deferred viene riservato in maniera atomica prima di notificare il risultato. 
+    - Se la memoria è sufficiente, una volta schedulata la scrittura non potrà più fallire.
 
   - Fixata validazione input `user_cli`
   - Spostata logica di release del lock in `release_lock`
-  - Aggiunta in `write_deferred` la `kfree` del buffer temporaneo dopo che la scrittura deferred è avvenuta.
-
-  - Separata `write_on_stream` e `write_deferred`. Le scritture high e low vengono fatte ora in due api separate.
-  - Tutto lo spazio necessario alla scrittura deferred viene riservato in maniera atomica prima di notificare il risultato. Se la memoria è sufficiente, una volta schedulata la scrittura non potrà più fallire.
