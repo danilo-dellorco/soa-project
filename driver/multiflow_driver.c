@@ -22,9 +22,9 @@ static int dev_open(struct inode *, struct file *);
 static int dev_release(struct inode *, struct file *);
 static ssize_t dev_write(struct file *, const char *, size_t, loff_t *);
 
-ssize_t write_on_stream(const char *buff, size_t len, flow_state *the_flow);
-int schedule_write(const char *buff, size_t len, session_state *session, object_state *the_object);
-void write_deferred(struct work_struct *deferred_work);
+ssize_t write_on_stream(const char *, size_t, object_state *);
+int schedule_write(const char *, size_t, session_state *, object_state *);
+void write_deferred(struct work_struct *);
 
 static int Major;
 static int Minor;
@@ -120,33 +120,34 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
         return WRITE_ERROR;
     }
 
-    // Ad alta priorità viene chiamata direttamente la write_on_stream, dopo aver ottenuto il lock e controllato che lo spazio sia sufficiente.
+    // Ad alta priorità viene chiamata la write_on_stream, dopo aver ottenuto il lock e controllato che lo spazio sia sufficiente.
     if (priority == HIGH_PRIORITY) {
-        written_bytes = write_on_stream(buff, len, the_flow);
-
-#ifdef TEST
-        printk(KERN_DEBUG "%s: [TEST] waiting %d msec to release write lock\n", MODNAME, TEST_TIME);
-        msleep(TEST_TIME);
-#endif
+        written_bytes = write_on_stream(buff, len, the_object);
     }
 
-    // Nel flusso a bassa priorità si notifica subito all'utente se la scrittura può avvenire o meno. La write viene schedulata tramite deferred work, e per costruzione non può fallire.
+    // Nel flusso a bassa priorità si chiama la schedule_write, che prepara la memoria, schedula la write e notifica in maniera sincrona il risultato.
     else if (priority == LOW_PRIORITY) {
         written_bytes = schedule_write(buff, len, session, the_object);
     }
+
+#ifdef TEST
+    printk(KERN_DEBUG "%s: [TEST] waiting %d msec to release write lock\n", MODNAME, TEST_TIME);
+    msleep(TEST_TIME);
+#endif
     release_lock(the_flow);
     printk("%s: ---------------------------------------------------------------------------------------\n", MODNAME);
     return written_bytes;
 }
 
 /**
- * Esegue la scrittura effettiva sullo stream di dati, scegliendo il flusso specifico in base alla priorità della scrittura.
+ * Esegue la scrittura effettiva sullo stream ad alta priorità.
  */
-ssize_t write_on_stream(const char *buff, size_t len, flow_state *the_flow) {
+ssize_t write_on_stream(const char *buff, size_t len, object_state *the_object) {
     stream_block *current_block;
     stream_block *empty_block;
     char *block_buff;
     int ret;
+    flow_state *the_flow = &the_object->priority_flow[HIGH_PRIORITY];
 
     // Allocazione delle strutture necessarie alla scrittura
     block_buff = kzalloc(len + 1, GFP_ATOMIC);
@@ -155,7 +156,7 @@ ssize_t write_on_stream(const char *buff, size_t len, flow_state *the_flow) {
         return WRITE_ERROR;
     }
     empty_block = kzalloc(sizeof(stream_block), GFP_ATOMIC);
-    if (packed_work->new_block == NULL) {
+    if (empty_block == NULL) {
         printk("%s: New block allocation error.\n", MODNAME);
         return SCHED_ERROR;
     }
@@ -181,7 +182,7 @@ ssize_t write_on_stream(const char *buff, size_t len, flow_state *the_flow) {
 }
 
 /**
- * Schedula la scrittura sul flusso a bassa priorità. Copia i dati utente da scrivere in un buffer kernel temporaneo,
+ * Schedula la scrittura sul flusso a bassa priorità. Copia i dati utente da scrivere in un buffer kernel,
  * che verrà immesso effettivamente nello stream soltanto quando verrà schedulata la write_deferred.
  */
 int schedule_write(const char *buff, size_t len, session_state *session, object_state *the_object) {
@@ -219,8 +220,8 @@ int schedule_write(const char *buff, size_t len, session_state *session, object_
     }
 
     // Riservo logicamente lo spazio libero sul dispositivo
-    the_object->available_bytes -= written_bytes;
-    total_bytes_low[Minor] += written_bytes;
+    the_object->available_bytes -= (len - ret);
+    total_bytes_low[Minor] += (len - ret);
 
     printk(KERN_INFO "%s: Packed work_struct correctly allocated.\n", MODNAME);
 
@@ -235,9 +236,8 @@ int schedule_write(const char *buff, size_t len, session_state *session, object_
  * Funzione associata alla work_struct in __INIT_WORK, per effettuare la scrittura in modalità deferred.
  */
 void write_deferred(struct work_struct *deferred_work) {
-    // Ottenimento del lock tramite mutex_lock
-    printk("%s: kworker daemon with PID=%d is processing the deferred write operation.\n", MODNAME, current->pid);
-    get_lock(the_object, session, minor, LOCK);
+    stream_block *current_block;
+    stream_block *empty_block;
 
     packed_work_struct *packed = container_of(deferred_work, packed_work_struct, work);
     int minor = packed->minor;
@@ -246,8 +246,9 @@ void write_deferred(struct work_struct *deferred_work) {
     flow_state *the_flow = &the_object->priority_flow[LOW_PRIORITY];
     size_t len = packed->len;
 
-    stream_block *current_block;
-    stream_block *empty_block;
+    // Ottenimento del lock tramite mutex_lock. Solo a lock acquisito viene eseguita la scrittura.
+    printk("%s: kworker daemon with PID=%d is processing the deferred write operation.\n", MODNAME, current->pid);
+    get_lock(the_object, session, minor, LOCK);
 
     // Si scrivono i dati sul flusso
     current_block = the_flow->tail;
