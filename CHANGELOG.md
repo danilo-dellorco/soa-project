@@ -38,3 +38,8 @@
 
   - Fixata validazione input `user_cli`
   - Spostata logica di release del lock in `release_lock`
+
+## Terzo Ricevimento v1.2
+  - **La `copy_from_user` nella `schedule_write` ora non ritorna errore se vengono copiati solo una parte dei bytes totale.**
+  - Rimosso comando di test
+  - Sistemata `printk` in `get_lock`

@@ -18,16 +18,10 @@ Mantiene tutti i parametri e le costanti utilizzate all'interno del device drive
 #include <linux/version.h> /* For LINUX_VERSION_CODE */
 #include <linux/workqueue.h>
 
-#define TEST
-
 #define MODNAME "MULTI-FLOW DEV"
 #define DEVICE_NAME "mflow-dev"
 
-#ifdef TEST
-#define MAX_SIZE_BYTES 128  // Utilizzato per debugging e testing
-#else
 #define MAX_SIZE_BYTES 1048576  // Massima dimensione di byte mantenibili da un singolo device (1MB)
-#endif
 
 #define NUM_DEVICES 128
 #define NUM_FLOWS 2

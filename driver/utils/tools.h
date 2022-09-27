@@ -80,7 +80,7 @@ int get_lock(object_state *the_object, session_state *session, int minor, int lo
     if (lock == 0) {
         printk("%s: Lock not available.\n", MODNAME);
         if (session->blocking == BLOCKING) {
-            printk(KERN_INFO "%s: Blocking operation, attempt to get lock.\n", MODNAME, session->timeout);
+            printk(KERN_INFO "%s: Blocking operation, attempt to get lock.\n", MODNAME);
 
             waiting_threads_high[minor]++;
             ret = put_to_waitqueue(session->timeout, &the_flow->operation_synchronizer, wq);

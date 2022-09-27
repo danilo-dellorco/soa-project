@@ -130,10 +130,6 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
         written_bytes = schedule_write(buff, len, session, the_object);
     }
 
-#ifdef TEST
-    printk(KERN_DEBUG "%s: [TEST] waiting %d msec to release write lock\n", MODNAME, TEST_TIME);
-    msleep(TEST_TIME);
-#endif
     release_lock(the_flow);
     printk("%s: ---------------------------------------------------------------------------------------\n", MODNAME);
     return written_bytes;
@@ -214,10 +210,6 @@ int schedule_write(const char *buff, size_t len, session_state *session, object_
 
     // Copia dei dati da scrivere nel buffer
     ret = copy_from_user((char *)packed_work->data, buff, len);
-    if (ret != 0) {
-        printk("%s: Packed work_struct data copy failure.\n", MODNAME);
-        return SCHED_ERROR;
-    }
 
     // Riservo logicamente lo spazio libero sul dispositivo
     the_object->available_bytes -= (len - ret);
@@ -426,19 +418,6 @@ static long dev_ioctl(struct file *filp, unsigned int command, unsigned long par
                 "%s: ioctl(%u) | thread %d has changed the TIMEOUT value on [%d,%d]\n",
                 MODNAME, command, current->pid, Major, Minor);
             break;
-        // Implementation of enable/disable device using ioctl instead of writing to file
-        // case ENABLE_DEV:
-        //     device_enabling[Minor] = ENABLED;
-        //     printk(
-        //         "%s: device [%d,%d] has been ENABLED \n",
-        //         MODNAME, Major, Minor, command);
-        //     break;
-        // case DISABLE_DEV:
-        //     device_enabling[Minor] = DISABLED;
-        //     printk(
-        //         "%s: device [%d,%d] has been DISABLED \n",
-        //         MODNAME, Major, Minor, command);
-        //     break;
         default:
             printk(
                 "%s: ioctl(%u) | thread %d has used an illegal command on [%d,%d]\n",
